@@ -1,70 +1,84 @@
 # HANDOVER — Arabic-first RAG Service (hiring-portfolio artifact)
 
-**Date:** 2026-07-24 · **Status:** design approved (sections 1–4), work starting · **Repo:** `~/projects/personal/arabic-rag`
+**Updated:** 2026-07-25 · **Status:** all four phases built · **Branch:** `feat/implementation` (no remote yet)
 
 ## Why this project
 
-Portfolio artifact for AI-engineer roles (GCC/Doha market). Differentiators most applicants lack: eval harness, latency budgets, cost dashboards, OTel tracing. Converts Gamal's 12 yrs backend + Arabic fluency into unfakeable signal. A second, smaller future project (agentic tool-calling with permission model + audit log) is out of scope here.
+Portfolio artifact for AI-engineer roles in the GCC market. The differentiator is not the chatbot — it is the eval harness, the benchmark numbers, the traces, and the cost controls around it. Converts 12 years of backend work plus native Arabic into signal most applicants cannot fake.
 
-## Decisions locked (user-approved)
+## Where it stands
 
-| Decision | Choice |
+541 tests pass, 1 skipped (opt-in real-cross-encoder test). `ruff check .` clean. The eval gate, the latency replay, and the benchmark all run green against real data.
+
+Two things have **never** run, and every document in the repo says so: an actual LLM API call (no key on this machine), and `terraform apply` (no GCP credentials).
+
+| Phase | State |
 |---|---|
-| Corpus | Qatar labor law + ministry regulations (MSA, public, verifiable answers) |
-| Dialect angle | Gulf-dialect *questions* against MSA docs (eval subset, ~50 pairs) |
-| Budget | Local-first, ~$0. GCP exposed only when needed (`terraform apply` before demo, `destroy` after; Cloud Run scale-to-zero) |
-| Generation | Provider-agnostic: thin `Provider` protocol + 2 impls (Anthropic, Gemini), timeout/429 failover. **No LiteLLM.** |
-| Scope | RAG + query planning (dialect→MSA rewrite, question decomposition). Not a full tool-calling agent. |
-| Timeline | 6–8 weeks thorough: full benchmark matrix, ~250 eval pairs, polished writeup |
-| Architecture | Single monorepo, clear boundaries. Rejected managed Vertex AI retrieval (kills benchmark story). |
-| Foundation | Copy of `~/projects/personal/boilerplate` (async FastAPI, SQLAlchemy, Alembic, pytest, Docker, CI) |
-| No fine-tuning | Explicitly skipped — retrieval/evals/reliability is the signal |
+| 1 — corpus, normalization, chunking, chunk store, eval metrics | done |
+| 2 — retrieval, embedders, reranker, benchmark, CI gate | done |
+| 3 — planning, generation failover, tracing, cache, `/ask` | done |
+| 4 — Terraform, Pub/Sub ingestion, refusal calibration, Grafana | done |
 
-## Approved design (4 sections)
+## The findings (all measured in this repo, reproducible)
 
-### 1. Repo layout & boundaries
+**Dense beats lexical decisively on Arabic.** recall@10 0.93–0.95 versus 0.356 for Postgres full-text search. The `simple` tsvector config has no Arabic stemmer, and it shows.
+
+**The Gulf-dialect penalty is real and model-dependent.** Against an MSA-matched control (same gold chunks, same questions, only the register changes), `multilingual-e5-large` loses 9.9 points of recall@10 and 19.7 points of MRR. `BAAI/bge-m3` is nearly flat (−0.4). The damage lands on ranking, not coverage.
+
+**A ~30-line dialect lexicon recovers most of it.** Rule-based Gulf→MSA rewriting takes e5 from 0.85 to 0.92 recall@10 on the 50 Gulf pairs. The gain shrinks at retrieval depth 20 (what the service actually runs) — documented rather than glossed. n=50, so direction is more trustworthy than magnitude.
+
+**RRF hybrid hurts top-3 precision.** Fusing a strong dense leg with a weak lexical one collapses recall@3 from 0.86 to 0.49. Traced to unweighted RRF arithmetic, confirmed not a bug. The reranker repairs it; without a reranker, dense-only is the right production config.
+
+**Reranking costs 375× the latency for 1.9 points of recall@10.** ~975 ms/query on Apple Silicon MPS versus ~2.6 ms for dense alone, and 4.3× worse on CPU (measured: 3972 ms p95, blowing its 1200 ms allocation).
+
+**The refusal gate had to be switched off — the strongest result in the repo.** `rerank_min_score = 0.15` was refusing 39 answerable questions to catch 7 unanswerable ones, and it was dialect-biased: **54% of Gulf questions refused versus 5.5% of MSA**. Swept over all 283 pairs, refusal precision peaks at 0.171 — the cross-encoder score simply does not separate the two populations. Threshold is now 0.0 and `docs/refusal-calibration.md` writes up the negative result plus ranked upgrade paths.
+
+## What is in the repo
+
 ```
-arabic-rag/
-├── app/            # FastAPI service: api/ (ask, ingest, health), retrieval/, planning/, generation/, observability/
-├── ingestion/      # fetch → clean → chunk → embed → load (local CLI + Pub/Sub-triggered on GCP)
-├── evals/          # labeled Q/A JSONL + harness; CI regression gate
-├── benchmark/      # 4-embedding-model comparison → results.json → writeup numbers
-├── terraform/      # Cloud Run + Cloud SQL(pgvector) + Pub/Sub; ephemeral (apply/destroy)
-└── docs/           # benchmark writeup, architecture, eval methodology, latency budget
+app/          service.py (/ask pipeline), deps.py, api/{ask,stats,ingest,health}.py
+              retrieval/{embed,search,rerank,cache}.py  generation/{base,providers,failover,budget}.py
+              planning/{planner,dialect,lexicon}.py     observability/{tracing,cost}.py
+ingestion/    fetch, normalize, chunk, pipeline, backfill, CLI (fetch|ingest|backfill|stats)
+evals/        schema, metrics, harness, gate, refusal, dataset_stats, data/eval_pairs.jsonl, baseline.json
+benchmark/    run.py, replay.py (BUDGET = single source of truth for latency), results/results.json
+terraform/    Cloud Run + Cloud SQL + Pub/Sub + Artifact Registry + Secret Manager, least-privilege IAM
+dashboards/   Grafana dashboard + Prometheus scrape config
+docs/         benchmark.md, refusal-calibration.md, latency-budget.md, specs/
 ```
-Boundary rule: `evals/` and `benchmark/` touch `app/` only via HTTP API + a shared retrieval interface — independently runnable/readable.
 
-### 2. Eval harness & dataset (BUILT FIRST)
-- ~250 pairs JSONL, versioned: `id, question, dialect_tag (msa|gulf), answer, source_doc, source_chunk_ids`.
-- Pass 1 LLM-generate from chunks → Pass 2 manual review of all (~200 MSA) → Pass 3 hand-write ~50 Gulf-dialect rephrasings (same ground-truth chunks). Plus ~15 unanswerable questions (measures refusal).
-- Metrics: **retrieval** (deterministic, gates CI): recall@3/10, MRR vs chunk IDs. **End-to-end** (LLM-judged, on-demand): faithfulness + correctness; fixed judge model+prompt, versioned; ~20 human-scored pairs to check judge agreement once.
-- CI: GH Actions, dockerized pgvector + frozen corpus snapshot; PR fails if recall@10 drops >2 pts vs `evals/baseline.json` (updated deliberately, never auto). LLM-judged suite manual-trigger with spend cap.
-- Skipped: Ragas/DeepEval — ~200 lines of owned Python instead.
+Corpus: 5 real Qatari legal documents from Al Meezan (Labour Law 14/2004, Domestic Workers 15/2017, Minimum Wage 17/2020, Heat Stress Decision 17/2021, Dispute Committees Decision 6/2018) → 233 article-boundary chunks.
 
-### 3. Retrieval & benchmark
-- Ingestion: Arabic normalization (strip tatweel/diacritics, normalize alef/ya/ta-marbuta) for index; original kept for display. Chunk on article (المادة) boundaries, ~500-token cap, stable IDs `doc:article:seq`.
-- One Postgres table: raw text, normalized text, tsvector, **one vector column per benchmarked model**.
-- Hybrid: pgvector HNSW cosine + Postgres FTS → RRF → top-20 → BGE-reranker-v2-m3 (local) → top-5. Each stage toggleable per-request for ablations.
-- Benchmark matrix: {multilingual-e5-large, BGE-m3 (local)} × {OpenAI text-embedding-3-large, Cohere embed-v4 or Voyage (API)} × 4 configs (dense/lexical/hybrid/+rerank) × 2 dialect tags → recall@3/10, MRR, latency, $/1K queries. One script → `benchmark/results.json`.
-- Query planning: cheap-LLM pre-step — (a) dialect→MSA rewrite for retrieval, answer in user's register; (b) multi-part decomposition, sub-query fusion before rerank. Measured as ablations.
+Dataset: 283 labelled pairs — 229 MSA, 54 Gulf, 268 answerable, 15 unanswerable. Zero dangling chunk citations. 79.8% corpus coverage.
 
-### 4. Service, observability, failure engineering
-- `POST /ask` SSE (citations event, then tokens; JSON flag), `POST /ingest` (BackgroundTasks local / Pub/Sub GCP), `/health`, `/metrics` (Prometheus).
-- Citations by chunk ID; explicit "not in corpus" path on low rerank confidence.
-- Generation adapter: `Provider` protocol, Anthropic + Gemini impls (~60 lines each, official SDKs), failover on p95-timeout/429 → span event.
-- OTel: one trace per /ask, spans plan→retrieve.dense→retrieve.lexical→fuse→rerank→generate; attrs: model, tokens, USD cost, cache hit, config. Jaeger locally, Cloud Trace on GCP. Latency budget doc: p95 ≤ 3.5s with per-stage allocations + replay script (30 eval Qs) failing blown budgets.
-- Cost/failure: semantic cache (query-embedding similarity in same pgvector table, `cache` namespace; hit rate on spans), prompt token cap (trim lowest-ranked chunks whole), tenacity retry/backoff, per-day USD kill-switch (503 past cap), `/stats` + one committed Grafana dashboard JSON.
+## Local setup
 
-### 5. GCP/Terraform + phasing (folded in, not yet user-reviewed in detail)
-- Terraform: Cloud Run (scale-to-zero) + Cloud SQL Postgres w/ pgvector (spun up for demo windows only) + Pub/Sub ingestion topic + Artifact Registry + Cloud Trace. Ephemeral by design.
-- Local demo alternative: `cloudflared tunnel` to local docker-compose.
-- Rough phases (6–8 wks): 1) corpus + ingestion + eval dataset; 2) retrieval + benchmark + writeup numbers; 3) service + planning + OTel + caching/failover; 4) Terraform + CI polish + published writeup w/ charts.
+```bash
+docker compose up -d db                       # pgvector on 5433 (creates rag_db AND rag_test)
+uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python -r requirements-dev.txt
+uv pip install --python .venv/bin/python -r requirements-models.txt   # torch, for the local models
+alembic upgrade head && python -m ingestion ingest
+python -m ingestion backfill --model bge      # and --model e5
+```
+Dev database is `rag_db`; tests use `rag_test` and never touch dev data.
 
-## Next steps (where we stopped)
-1. Write full design spec → `docs/specs/2026-07-24-arabic-rag-design.md`, commit.
-2. superpowers:writing-plans → phased implementation plan.
-3. Phase 1 start: copy boilerplate in, strip example Item CRUD, pgvector in docker-compose, corpus fetch script.
+## Known gaps (all documented in-repo)
+
+- Generation never executed. The 2000 ms `generate` allocation — 57% of the latency budget — is an assumption, so the 3.5 s end-to-end total is never actually checked.
+- Refusal now has no positive signal at all. Switching off the score gate was right on the evidence, but an unanswerable question now gets answered from the five nearest articles unless the model itself declines — and model abstention is unmeasured.
+- `terraform plan/apply/destroy` never run. Schema-validated against the real `hashicorp/google` 7.41.0 provider, but with OpenTofu 1.12.2 rather than the `terraform` binary, which is not installed here.
+- Cloud Trace gets Cloud Run's request spans but not the app's per-stage spans — the OTLP/gRPC exporter cannot attach Google credentials.
+- Model weights (~4.4 GB) are not baked into the image, so a cold Cloud Run instance downloads them on first request.
+- OpenAI and Cohere embedding columns, the LLM-judged faithfulness suite, and the LLMPlanner ablation are all wired and mock-tested but unmeasured — one API key unblocks all of them.
+
+## Next three things
+
+1. **Get one API key and spend a day on everything it unblocks.** Model abstention against the 15 unanswerable pairs (the named replacement for the refusal gate), then the `generate` stage measurement, then the LLM-judged suite and the LLMPlanner ablation. One key retires most of the gaps list.
+2. **Decide the reranker's fate on CPU.** It cannot meet its own budget without a GPU. Either re-derive the allocation from CPU numbers in its own commit, or ship `config=hybrid` at a measured cost of 1.9 points recall@10.
+3. **Implement top1-vs-top5 margin refusal.** Cheapest item on the calibration doc's list — no new model, no key — and it directly tests whether the *gap* between candidates is dialect-neutral even though the absolute score demonstrably is not.
 
 ## Process notes
-- Ponytail mode active (lazy/minimal). Never push to main — branch + PR (user's global rule).
-- Git repo already initialized (`main`) at `~/projects/personal/arabic-rag`, nothing committed yet.
+
+- Ponytail mode active (lazy/minimal, `# ponytail:` comments mark deliberate ceilings).
+- User rule: never push directly to main — branch + PR. Work is on `feat/implementation`; there is no git remote yet, so a PR cannot be opened until one is added.
+- Built with multi-agent workflows; every number in every document came from a real run, and negative results were kept rather than buried.
