@@ -9,7 +9,7 @@ from app.main import app
 
 TEST_DATABASE_URL = os.getenv(
     "TEST_DATABASE_URL",
-    "postgresql+asyncpg://rag_user:rag_pass@localhost:5433/rag_db",
+    "postgresql+asyncpg://rag_user:rag_pass@localhost:5433/rag_test",
 )
 
 
