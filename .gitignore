@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+.pytest_cache/
+.venv/
+data/corpus/*.raw
+benchmark/results/*.local.json
+*.egg-info/
+.coverage

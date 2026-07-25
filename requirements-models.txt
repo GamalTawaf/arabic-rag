@@ -1,0 +1,5 @@
+# Optional: local embedding + reranker models for the benchmark.
+# Heavy (torch). Only needed to run benchmark/ with local models.
+sentence-transformers
+openai
+cohere
