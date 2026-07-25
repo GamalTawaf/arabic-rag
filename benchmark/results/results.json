@@ -1282,5 +1282,98 @@
         }
       }
     }
-  ]
+  ],
+  "planning": {
+    "measured_at": "2026-07-25T08:42:59+00:00",
+    "git_commit": "6fe6917",
+    "method": "Gulf->MSA query-rewrite ablation. Split: the 50 answerable Gulf pairs from evals/data/eval_pairs.jsonl, dense retrieval only, identical ground truth across arms. Rewriter: app.planning.dialect.gulf_to_msa, a hand-written ~30-entry lexicon plus normalization -- no model, no API key, no network; it changed 49 of the 50 questions. Arms: raw (question as typed), rewritten (MSA rewrite instead), fused (both queries retrieved and RRF-fused, which is what RuleBasedPlanner ships). Each leg retrieves 10 candidates; recall@3/recall@10/MRR computed over the top 10. n=50, so one pair is two points and the Wilson interval is roughly +/-8 to +/-10 points: direction is trustworthy, magnitude is not.",
+    "split": "gulf answerable",
+    "n_pairs": 50,
+    "n_rewritten": 49,
+    "config": "dense",
+    "per_leg_depth": 10,
+    "fusion": "rrf",
+    "arms": {
+      "e5": {
+        "raw": {
+          "recall@3": 0.75,
+          "recall@10": 0.85,
+          "mrr": 0.6146
+        },
+        "rewritten": {
+          "recall@3": 0.73,
+          "recall@10": 0.92,
+          "mrr": 0.6917
+        },
+        "fused": {
+          "recall@3": 0.76,
+          "recall@10": 0.92,
+          "mrr": 0.6512
+        }
+      },
+      "bge": {
+        "raw": {
+          "recall@3": 0.79,
+          "recall@10": 0.93,
+          "mrr": 0.7432
+        },
+        "rewritten": {
+          "recall@3": 0.84,
+          "recall@10": 0.95,
+          "mrr": 0.7632
+        },
+        "fused": {
+          "recall@3": 0.82,
+          "recall@10": 0.95,
+          "mrr": 0.7737
+        }
+      }
+    },
+    "depth_sensitivity": {
+      "note": "The arms above retrieve 10 candidates per leg. The service retrieves 20 (settings.top_k_retrieve). Re-run at depth 20, the fused arm's recall@10 advantage shrinks: RRF's top 10 is diluted by deep candidates from both legs. Same code, same corpus, same pairs -- only the depth differs.",
+      "per_leg_depth_20": {
+        "e5": {
+          "raw": {
+            "recall@3": 0.75,
+            "recall@10": 0.85,
+            "mrr": 0.6172
+          },
+          "rewritten": {
+            "recall@3": 0.73,
+            "recall@10": 0.92,
+            "mrr": 0.6917
+          },
+          "fused": {
+            "recall@3": 0.76,
+            "recall@10": 0.89,
+            "mrr": 0.6497
+          }
+        },
+        "bge": {
+          "raw": {
+            "recall@3": 0.79,
+            "recall@10": 0.93,
+            "mrr": 0.7444
+          },
+          "rewritten": {
+            "recall@3": 0.84,
+            "recall@10": 0.95,
+            "mrr": 0.7632
+          },
+          "fused": {
+            "recall@3": 0.82,
+            "recall@10": 0.93,
+            "mrr": 0.7722
+          }
+        }
+      }
+    },
+    "reading": [
+      "The lexicon recovers ~7 of e5's 9.9-point recall@10 dialect gap (0.850 -> 0.920 against an MSA-matched control of 0.949) at per-leg depth 10, ~4 points at depth 20.",
+      "MRR improves for both models, which is the metric the dialect penalty landed on.",
+      "It does NOT improve e5's recall@3: 0.75 raw -> 0.73 rewritten, 0.76 fused. For the model with the worst penalty, the top of the list is essentially unchanged.",
+      "The fused arm ships even though 'rewritten' scores higher on raw recall: searching with both queries means a bad rewrite can only add candidates, never remove the chunk the user's own words would have found. The lexicon's error rate on unseen dialect is exactly what this benchmark cannot measure.",
+      "Rule-based only. LLMPlanner is implemented and unit-tested against a mock but has never been scored -- no API key was available in this environment."
+    ]
+  }
 }

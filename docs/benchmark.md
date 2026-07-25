@@ -329,3 +329,97 @@ In rough order of expected value:
 4. **More Gulf pairs.** 50 is enough to see a large effect and not enough to size a small one.
 5. **The two API models**, to check whether a much larger multilingual embedding model narrows the
    dialect gap or just raises both numbers.
+
+## Query planning: does a Gulf→MSA rewrite recover the dialect penalty?
+
+The headline finding above says a Gulf-dialect question loses ~10 points of recall@10 with `e5`.
+Item 1 on the list of things that would move the numbers was dialect→MSA query rewriting. This is
+that ablation, run for real.
+
+**Method.** The 50 answerable Gulf pairs, dense retrieval, both local models, identical ground
+truth. The rewriter is `app/planning/dialect.py`: a hand-written lexicon of roughly thirty
+Gulf→MSA substitutions (`شكثر`→`كم`, `وين`→`أين`, `شلون`→`كيف`, `يبي`→`يريد`, …) plus normalization —
+no model, no API key, no network. It changed **49 of the 50 questions**. Three arms:
+
+- **raw** — retrieve with the question as typed. The phase-2 baseline.
+- **rewritten** — retrieve with the MSA rewrite instead.
+- **fused** — retrieve with *both*, fuse the two ranked lists with RRF. This is what
+  `RuleBasedPlanner` ships.
+
+Each leg retrieves 10 candidates; metrics are recall@3, recall@10 and MRR over the top 10.
+
+| arm | e5 recall@3 | e5 recall@10 | e5 MRR | bge recall@3 | bge recall@10 | bge MRR |
+|---|---|---|---|---|---|---|
+| raw | 0.75 | 0.85 | 0.6146 | 0.79 | 0.93 | 0.7432 |
+| rewritten | 0.73 | **0.92** | 0.6917 | **0.84** | **0.95** | 0.7632 |
+| fused (raw + rewritten, RRF) | **0.76** | **0.92** | 0.6512 | 0.82 | **0.95** | **0.7737** |
+
+**It works at k=10, for the model that needed it.** e5's Gulf recall@10 goes 0.850 → 0.920. The
+MSA-matched control for that cell is 0.949, so a thirty-line lexicon recovers roughly **7 of the
+9.9-point dialect gap** — about 70% of the loss, for no model and no API call. `bge`, which barely
+had a dialect penalty to begin with (−0.4 points), gains 2 points and lands at 0.95.
+
+**MRR improves for both models, which is the metric the penalty actually landed on.** e5 0.6146 →
+0.6917 rewritten, bge 0.7432 → 0.7737 fused. The phase-2 finding was that the dialect penalty is a
+*ranking* problem, not a coverage problem; rewriting moves the ranking metric, which is the right
+mechanism responding.
+
+**It does not fix e5's recall@3, and one arm makes it worse.** e5 raw is 0.75 at k=3; rewriting
+takes it to **0.73**. The fused arm claws back to 0.76 — one question out of fifty better than doing
+nothing at all. So for the model with the worst dialect penalty, the top of the list — the part a
+RAG generator actually reads — is essentially unchanged. Recovering recall@10 while leaving
+recall@3 flat is a smaller win than the headline number suggests, and the reranker, not the
+rewriter, is what has to close that part of the gap. `bge` does gain at k=3 (0.79 → 0.84 rewritten,
+0.82 fused), so this is a per-model result, not a property of rewriting.
+
+**n = 50.** One question is two points. The Wilson interval at these rates is roughly **±8 to ±10
+points**, so every delta in that table is inside the noise band of every other. Trust the
+direction — three arms, two models, six of eight aggregate cells improve and the improvements are
+larger than the single regression — and do not trust the magnitude.
+
+### Why the fused arm ships, even though "rewritten" scores higher
+
+`RuleBasedPlanner` searches with the original *and* the rewrite and fuses, rather than substituting
+the rewrite. On raw recall the substitution arm is the better of the two for both models. It ships
+anyway, and the reason is a failure-mode argument rather than a scoreboard argument:
+
+**Searching with both queries means a bad rewrite can only add candidates, never remove them.** The
+lexicon is a fixed list written by hand; the question it has never seen is the one it mangles. If
+the rewrite replaces the user's words, one wrong substitution deletes the only query that would have
+found the right article, and there is no recovery. If the rewrite is *added*, a wrong rewrite
+contributes candidates that rank badly and get out-ranked by the original query's list — the
+downside is bounded at one extra vector search, and the chunk the user's own words would have found
+is still in the fused list. Per-pair, fusion is +3/−1 for bge and +2/−1 for e5 at k=3: small, and
+one-sided.
+
+That asymmetry is worth more than the 0.01–0.02 of recall the substitution arm wins, because the
+lexicon's error rate on unseen dialect is exactly the thing this benchmark cannot measure.
+
+### Two caveats on these numbers
+
+**Retrieval depth changes the result.** The table above retrieves 10 candidates per leg. The
+service retrieves 20 (`settings.top_k_retrieve`), and at that depth the fused arm's advantage
+shrinks, because RRF's top 10 is diluted by deep candidates from both legs:
+
+| fused, per-leg depth | e5 recall@10 | bge recall@10 |
+|---|---|---|
+| 10 candidates per leg | 0.92 | 0.95 |
+| 20 candidates per leg | 0.89 | 0.93 |
+
+At depth 20 the fused arm recovers ~4 of e5's 9.9 points rather than ~7, and bge's gain disappears
+entirely. Both rows are real measurements of the same code against the same corpus; they differ
+only in how deep each leg reaches. In production the fused list feeds a cross-encoder rather than a
+generator directly, so what matters there is whether the gold chunk is anywhere in the 20 candidates
+the reranker sees — but the honest reading is that the +7-point figure is the best case for this
+technique, not the shipped one.
+
+**This is a rule-based result, and the LLM rewriter is unmeasured.** `LLMPlanner` exists and is
+unit-tested against a mock, but no API key was available in this environment, so it has never been
+scored against the eval set. A model-based rewriter should beat a thirty-entry lexicon — it can
+handle dialect the list has never seen, and it can decompose multi-part questions — but that is an
+expectation, not a number. The measurable comparison is one API key away and is the obvious next
+ablation.
+
+(Question decomposition was also measured and is **off by default**: it cost 5 points of recall@3
+on bge and 4 on e5 while adding nothing at k=10. The table and the reasoning are in the
+`RuleBasedPlanner` docstring.)
