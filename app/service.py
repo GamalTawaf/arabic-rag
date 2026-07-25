@@ -18,19 +18,36 @@ is the point of the design rather than an optimisation:
 1. **Cache hit** — a semantically equivalent question was already answered
    (:mod:`app.retrieval.cache` owns the negation/digit guards that make that
    safe). Returns immediately, ``cached=True``, provider untouched.
-2. **Refusal gate** — the top rerank score is below
-   ``settings.rerank_min_score``, so the corpus does not contain the answer.
-   Returns "not in corpus" *in the user's register*, ``refused=True``, provider
-   untouched. Quality control and cost control in one branch.
+2. **Refusal gate** — retrieval came back empty, or the top rerank score is below
+   ``settings.rerank_min_score``. Returns "not in corpus" *in the user's
+   register*, ``refused=True``, provider untouched. The score half of that gate
+   is **off in the shipped config** (``rerank_min_score = 0.0``): swept over all
+   283 eval pairs the cross-encoder's top score does not separate answerable
+   from unanswerable well enough to gate on — see docs/refusal-calibration.md
+   and :meth:`RagService._is_refusal`.
 3. **Spend cap** — checked with an estimate *before* the call, never after.
 
 **Multi-query retrieval.** ``RuleBasedPlanner`` returns both the user's original
 question and its MSA rewrite; each is retrieved with, and the ranked lists are
 fused with RRF. That is exactly the "fused" arm of the phase-3 measurement
-(50 answerable Gulf pairs, real corpus)::
+(50 answerable Gulf pairs, dense, real corpus).
 
-    bge   raw 0.79 / 0.93 / MRR 0.7432    fused 0.82 / 0.95 / 0.7737   (r@3/r@10)
-    e5    raw 0.75 / 0.85 / MRR 0.6146    fused 0.76 / 0.92 / 0.6512
+The ablation was run at two per-leg retrieval depths and the fused arm is
+depth-sensitive, so the depth has to be named or the row is unreadable. **The
+service retrieves ``settings.top_k_retrieve = 20`` per query**, so these are the
+rows it actually runs::
+
+    per-leg depth 20 (SHIPPED — settings.top_k_retrieve)
+    bge   raw 0.79 / 0.93 / MRR 0.7444    fused 0.82 / 0.93 / 0.7722   (r@3/r@10)
+    e5    raw 0.75 / 0.85 / MRR 0.6172    fused 0.76 / 0.89 / 0.6497
+
+At per-leg depth 10 the fused arm gains more — bge 0.82 / 0.95 / 0.7737 and
+e5 0.76 / 0.92 / 0.6512 — because RRF's top 10 is not yet diluted by deep
+candidates from both legs. Same code, same corpus, same 50 pairs; only the depth
+differs. Both tables are in ``benchmark/results/results.json`` under ``planning``
+(``per_leg_depth`` and ``depth_sensitivity.per_leg_depth_20``), and
+:class:`app.planning.planner.RuleBasedPlanner` quotes the depth-20 table with the
+full arm list.
 
 The rewrite is *added*, never substituted, so a bad lexicon entry can only
 introduce candidates that rank badly — it can never remove a chunk the original
@@ -551,9 +568,12 @@ class RagService:
                 # cross-encoder's *ordering* is dialect-robust but its absolute
                 # score is not: measured over 20 eval pairs the gold chunk's
                 # score has median 0.92 for MSA questions and median 0.01 for
-                # Gulf ones, while `rerank_min_score` is a single global 0.15.
-                # Scoring the rewrite is what stops that floor refusing half the
-                # answerable Gulf questions. See app/retrieval/rerank.py.
+                # Gulf ones. Scoring the rewrite is what kept a global score
+                # floor from refusing half the answerable Gulf questions; the
+                # floor is now off entirely (rerank_min_score = 0.0) because at
+                # n=283 it failed Gulf speakers 10x more often than MSA ones even
+                # after the rewrite. See docs/refusal-calibration.md and
+                # app/retrieval/rerank.py.
                 ranked = await self.reranker.rerank(
                     plan.rewritten or plan.original, hits, top_k=top_k
                 )
@@ -575,7 +595,16 @@ class RagService:
         The ``rerank_min_score`` floor is only meaningful against a
         cross-encoder's 0-1 score, so it is applied only when one actually ran —
         ``hit.source`` says so. RRF scores live around 1/61 and cosine scores
-        around 0.8; comparing either to 0.15 would refuse or accept everything.
+        around 0.8; comparing either to a rerank threshold would refuse or accept
+        everything.
+
+        **The shipped floor is 0.0**, i.e. the score comparison never fires (a
+        sigmoid score is never negative) and "retrieval returned nothing" is the
+        only automatic refusal left. That is a measured decision, not an
+        oversight: docs/refusal-calibration.md. The branch stays because the
+        setting is still the right lever — it is the *value* that could not be
+        justified, and a margin-based or dialect-aware replacement would land
+        here.
         """
         if not hits:
             return True

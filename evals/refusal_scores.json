@@ -1,0 +1,1428 @@
+{
+  "_note": "Top cross-encoder score per eval pair, produced by `python -m evals.refusal`. Regenerate with --rescore after any change to retrieval, the corpus, the planner or the reranker.",
+  "config": "hybrid+rerank",
+  "model_key": "bge",
+  "reranker": "bge",
+  "planner": "rules",
+  "top_k_retrieve": 20,
+  "top_k_context": 5,
+  "pairs": "evals/data/eval_pairs.jsonl",
+  "recorded": "2026-07-25T09:04:19+00:00",
+  "scores": [
+    {
+      "pair_id": "gulf-001",
+      "answerable": true,
+      "top_score": 0.096876
+    },
+    {
+      "pair_id": "gulf-002",
+      "answerable": true,
+      "top_score": 0.215231
+    },
+    {
+      "pair_id": "gulf-003",
+      "answerable": true,
+      "top_score": 0.535993
+    },
+    {
+      "pair_id": "gulf-004",
+      "answerable": true,
+      "top_score": 0.440746
+    },
+    {
+      "pair_id": "gulf-005",
+      "answerable": true,
+      "top_score": 0.17031
+    },
+    {
+      "pair_id": "gulf-006",
+      "answerable": true,
+      "top_score": 0.038379
+    },
+    {
+      "pair_id": "gulf-007",
+      "answerable": true,
+      "top_score": 0.002725
+    },
+    {
+      "pair_id": "gulf-008",
+      "answerable": true,
+      "top_score": 0.022199
+    },
+    {
+      "pair_id": "gulf-009",
+      "answerable": true,
+      "top_score": 0.350011
+    },
+    {
+      "pair_id": "gulf-010",
+      "answerable": true,
+      "top_score": 0.048539
+    },
+    {
+      "pair_id": "gulf-011",
+      "answerable": true,
+      "top_score": 0.547072
+    },
+    {
+      "pair_id": "gulf-012",
+      "answerable": true,
+      "top_score": 0.093325
+    },
+    {
+      "pair_id": "gulf-013",
+      "answerable": true,
+      "top_score": 0.873521
+    },
+    {
+      "pair_id": "gulf-014",
+      "answerable": true,
+      "top_score": 0.411714
+    },
+    {
+      "pair_id": "gulf-015",
+      "answerable": true,
+      "top_score": 0.42528
+    },
+    {
+      "pair_id": "gulf-016",
+      "answerable": true,
+      "top_score": 0.5245
+    },
+    {
+      "pair_id": "gulf-017",
+      "answerable": true,
+      "top_score": 0.052048
+    },
+    {
+      "pair_id": "gulf-018",
+      "answerable": true,
+      "top_score": 0.527578
+    },
+    {
+      "pair_id": "gulf-019",
+      "answerable": true,
+      "top_score": 0.032352
+    },
+    {
+      "pair_id": "gulf-020",
+      "answerable": true,
+      "top_score": 0.235325
+    },
+    {
+      "pair_id": "gulf-021",
+      "answerable": true,
+      "top_score": 0.733914
+    },
+    {
+      "pair_id": "gulf-022",
+      "answerable": true,
+      "top_score": 0.000972
+    },
+    {
+      "pair_id": "gulf-023",
+      "answerable": true,
+      "top_score": 0.007558
+    },
+    {
+      "pair_id": "gulf-024",
+      "answerable": true,
+      "top_score": 0.000475
+    },
+    {
+      "pair_id": "gulf-025",
+      "answerable": true,
+      "top_score": 0.028505
+    },
+    {
+      "pair_id": "gulf-026",
+      "answerable": true,
+      "top_score": 0.004053
+    },
+    {
+      "pair_id": "gulf-027",
+      "answerable": true,
+      "top_score": 0.116779
+    },
+    {
+      "pair_id": "gulf-028",
+      "answerable": true,
+      "top_score": 0.004792
+    },
+    {
+      "pair_id": "gulf-029",
+      "answerable": true,
+      "top_score": 0.005575
+    },
+    {
+      "pair_id": "gulf-030",
+      "answerable": true,
+      "top_score": 0.129525
+    },
+    {
+      "pair_id": "gulf-031",
+      "answerable": true,
+      "top_score": 0.434384
+    },
+    {
+      "pair_id": "gulf-032",
+      "answerable": true,
+      "top_score": 0.048087
+    },
+    {
+      "pair_id": "gulf-033",
+      "answerable": true,
+      "top_score": 0.066224
+    },
+    {
+      "pair_id": "gulf-034",
+      "answerable": true,
+      "top_score": 0.925285
+    },
+    {
+      "pair_id": "gulf-035",
+      "answerable": true,
+      "top_score": 0.035173
+    },
+    {
+      "pair_id": "gulf-036",
+      "answerable": true,
+      "top_score": 0.338284
+    },
+    {
+      "pair_id": "gulf-037",
+      "answerable": true,
+      "top_score": 0.468636
+    },
+    {
+      "pair_id": "gulf-038",
+      "answerable": true,
+      "top_score": 0.543978
+    },
+    {
+      "pair_id": "gulf-039",
+      "answerable": true,
+      "top_score": 0.594111
+    },
+    {
+      "pair_id": "gulf-040",
+      "answerable": true,
+      "top_score": 0.01469
+    },
+    {
+      "pair_id": "gulf-041",
+      "answerable": true,
+      "top_score": 0.357971
+    },
+    {
+      "pair_id": "gulf-042",
+      "answerable": true,
+      "top_score": 0.362171
+    },
+    {
+      "pair_id": "gulf-043",
+      "answerable": true,
+      "top_score": 0.027747
+    },
+    {
+      "pair_id": "gulf-044",
+      "answerable": true,
+      "top_score": 0.03657
+    },
+    {
+      "pair_id": "gulf-045",
+      "answerable": true,
+      "top_score": 0.113219
+    },
+    {
+      "pair_id": "gulf-046",
+      "answerable": true,
+      "top_score": 0.152141
+    },
+    {
+      "pair_id": "gulf-047",
+      "answerable": true,
+      "top_score": 0.931998
+    },
+    {
+      "pair_id": "gulf-048",
+      "answerable": true,
+      "top_score": 0.025056
+    },
+    {
+      "pair_id": "gulf-049",
+      "answerable": true,
+      "top_score": 0.058417
+    },
+    {
+      "pair_id": "gulf-050",
+      "answerable": true,
+      "top_score": 0.014697
+    },
+    {
+      "pair_id": "msa-1-001",
+      "answerable": true,
+      "top_score": 0.379369
+    },
+    {
+      "pair_id": "msa-1-002",
+      "answerable": true,
+      "top_score": 0.916248
+    },
+    {
+      "pair_id": "msa-1-003",
+      "answerable": true,
+      "top_score": 0.831053
+    },
+    {
+      "pair_id": "msa-1-004",
+      "answerable": true,
+      "top_score": 0.97899
+    },
+    {
+      "pair_id": "msa-1-005",
+      "answerable": true,
+      "top_score": 0.972371
+    },
+    {
+      "pair_id": "msa-1-006",
+      "answerable": true,
+      "top_score": 0.988677
+    },
+    {
+      "pair_id": "msa-1-007",
+      "answerable": true,
+      "top_score": 0.942575
+    },
+    {
+      "pair_id": "msa-1-008",
+      "answerable": true,
+      "top_score": 0.94353
+    },
+    {
+      "pair_id": "msa-1-009",
+      "answerable": true,
+      "top_score": 0.960873
+    },
+    {
+      "pair_id": "msa-1-010",
+      "answerable": true,
+      "top_score": 0.632129
+    },
+    {
+      "pair_id": "msa-1-011",
+      "answerable": true,
+      "top_score": 0.094998
+    },
+    {
+      "pair_id": "msa-1-012",
+      "answerable": true,
+      "top_score": 0.980185
+    },
+    {
+      "pair_id": "msa-1-013",
+      "answerable": true,
+      "top_score": 0.960466
+    },
+    {
+      "pair_id": "msa-1-014",
+      "answerable": true,
+      "top_score": 0.969741
+    },
+    {
+      "pair_id": "msa-1-015",
+      "answerable": true,
+      "top_score": 0.988671
+    },
+    {
+      "pair_id": "msa-1-016",
+      "answerable": true,
+      "top_score": 0.991806
+    },
+    {
+      "pair_id": "msa-1-017",
+      "answerable": true,
+      "top_score": 0.990453
+    },
+    {
+      "pair_id": "msa-1-018",
+      "answerable": true,
+      "top_score": 0.373989
+    },
+    {
+      "pair_id": "msa-1-019",
+      "answerable": true,
+      "top_score": 0.995304
+    },
+    {
+      "pair_id": "msa-1-020",
+      "answerable": true,
+      "top_score": 0.994825
+    },
+    {
+      "pair_id": "msa-1-021",
+      "answerable": true,
+      "top_score": 0.997473
+    },
+    {
+      "pair_id": "msa-1-022",
+      "answerable": true,
+      "top_score": 0.96527
+    },
+    {
+      "pair_id": "msa-1-023",
+      "answerable": true,
+      "top_score": 0.902153
+    },
+    {
+      "pair_id": "msa-1-024",
+      "answerable": true,
+      "top_score": 0.947858
+    },
+    {
+      "pair_id": "msa-1-025",
+      "answerable": true,
+      "top_score": 0.982278
+    },
+    {
+      "pair_id": "msa-1-026",
+      "answerable": true,
+      "top_score": 0.984264
+    },
+    {
+      "pair_id": "msa-1-027",
+      "answerable": true,
+      "top_score": 0.812643
+    },
+    {
+      "pair_id": "msa-1-028",
+      "answerable": true,
+      "top_score": 0.2538
+    },
+    {
+      "pair_id": "msa-1-029",
+      "answerable": true,
+      "top_score": 0.948916
+    },
+    {
+      "pair_id": "msa-1-030",
+      "answerable": true,
+      "top_score": 0.950322
+    },
+    {
+      "pair_id": "msa-1-031",
+      "answerable": true,
+      "top_score": 0.999243
+    },
+    {
+      "pair_id": "msa-1-032",
+      "answerable": true,
+      "top_score": 0.32966
+    },
+    {
+      "pair_id": "msa-1-033",
+      "answerable": true,
+      "top_score": 0.983327
+    },
+    {
+      "pair_id": "msa-1-034",
+      "answerable": true,
+      "top_score": 0.744815
+    },
+    {
+      "pair_id": "msa-1-035",
+      "answerable": true,
+      "top_score": 0.828648
+    },
+    {
+      "pair_id": "msa-2-001",
+      "answerable": true,
+      "top_score": 0.959459
+    },
+    {
+      "pair_id": "msa-2-002",
+      "answerable": true,
+      "top_score": 0.87708
+    },
+    {
+      "pair_id": "msa-2-003",
+      "answerable": true,
+      "top_score": 0.957278
+    },
+    {
+      "pair_id": "msa-2-004",
+      "answerable": true,
+      "top_score": 0.950057
+    },
+    {
+      "pair_id": "msa-2-005",
+      "answerable": true,
+      "top_score": 0.990454
+    },
+    {
+      "pair_id": "msa-2-006",
+      "answerable": true,
+      "top_score": 0.991621
+    },
+    {
+      "pair_id": "msa-2-007",
+      "answerable": true,
+      "top_score": 0.976425
+    },
+    {
+      "pair_id": "msa-2-008",
+      "answerable": true,
+      "top_score": 0.995483
+    },
+    {
+      "pair_id": "msa-2-009",
+      "answerable": true,
+      "top_score": 0.999491
+    },
+    {
+      "pair_id": "msa-2-010",
+      "answerable": true,
+      "top_score": 0.999418
+    },
+    {
+      "pair_id": "msa-2-011",
+      "answerable": true,
+      "top_score": 0.98802
+    },
+    {
+      "pair_id": "msa-2-012",
+      "answerable": true,
+      "top_score": 0.995384
+    },
+    {
+      "pair_id": "msa-2-013",
+      "answerable": true,
+      "top_score": 0.691733
+    },
+    {
+      "pair_id": "msa-2-014",
+      "answerable": true,
+      "top_score": 0.365932
+    },
+    {
+      "pair_id": "msa-2-015",
+      "answerable": true,
+      "top_score": 0.871537
+    },
+    {
+      "pair_id": "msa-2-016",
+      "answerable": true,
+      "top_score": 0.994932
+    },
+    {
+      "pair_id": "msa-2-017",
+      "answerable": true,
+      "top_score": 0.959139
+    },
+    {
+      "pair_id": "msa-2-018",
+      "answerable": true,
+      "top_score": 0.99819
+    },
+    {
+      "pair_id": "msa-2-019",
+      "answerable": true,
+      "top_score": 0.993143
+    },
+    {
+      "pair_id": "msa-2-020",
+      "answerable": true,
+      "top_score": 0.381018
+    },
+    {
+      "pair_id": "msa-2-021",
+      "answerable": true,
+      "top_score": 0.311528
+    },
+    {
+      "pair_id": "msa-2-022",
+      "answerable": true,
+      "top_score": 0.997409
+    },
+    {
+      "pair_id": "msa-2-023",
+      "answerable": true,
+      "top_score": 0.975007
+    },
+    {
+      "pair_id": "msa-2-024",
+      "answerable": true,
+      "top_score": 0.989287
+    },
+    {
+      "pair_id": "msa-2-025",
+      "answerable": true,
+      "top_score": 0.997186
+    },
+    {
+      "pair_id": "msa-2-026",
+      "answerable": true,
+      "top_score": 0.845846
+    },
+    {
+      "pair_id": "msa-2-027",
+      "answerable": true,
+      "top_score": 0.641741
+    },
+    {
+      "pair_id": "msa-2-028",
+      "answerable": true,
+      "top_score": 0.998058
+    },
+    {
+      "pair_id": "msa-2-029",
+      "answerable": true,
+      "top_score": 0.976879
+    },
+    {
+      "pair_id": "msa-2-030",
+      "answerable": true,
+      "top_score": 0.999261
+    },
+    {
+      "pair_id": "msa-2-031",
+      "answerable": true,
+      "top_score": 0.878245
+    },
+    {
+      "pair_id": "msa-2-032",
+      "answerable": true,
+      "top_score": 0.999035
+    },
+    {
+      "pair_id": "msa-2-033",
+      "answerable": true,
+      "top_score": 0.99809
+    },
+    {
+      "pair_id": "msa-2-034",
+      "answerable": true,
+      "top_score": 0.542259
+    },
+    {
+      "pair_id": "msa-3-001",
+      "answerable": true,
+      "top_score": 0.798164
+    },
+    {
+      "pair_id": "msa-3-002",
+      "answerable": true,
+      "top_score": 0.54446
+    },
+    {
+      "pair_id": "msa-3-003",
+      "answerable": true,
+      "top_score": 0.996644
+    },
+    {
+      "pair_id": "msa-3-004",
+      "answerable": true,
+      "top_score": 0.986388
+    },
+    {
+      "pair_id": "msa-3-005",
+      "answerable": true,
+      "top_score": 0.999098
+    },
+    {
+      "pair_id": "msa-3-006",
+      "answerable": true,
+      "top_score": 0.938498
+    },
+    {
+      "pair_id": "msa-3-007",
+      "answerable": true,
+      "top_score": 0.055849
+    },
+    {
+      "pair_id": "msa-3-008",
+      "answerable": true,
+      "top_score": 0.987698
+    },
+    {
+      "pair_id": "msa-3-009",
+      "answerable": true,
+      "top_score": 0.353662
+    },
+    {
+      "pair_id": "msa-3-010",
+      "answerable": true,
+      "top_score": 0.637097
+    },
+    {
+      "pair_id": "msa-3-011",
+      "answerable": true,
+      "top_score": 0.675564
+    },
+    {
+      "pair_id": "msa-3-012",
+      "answerable": true,
+      "top_score": 0.960815
+    },
+    {
+      "pair_id": "msa-3-013",
+      "answerable": true,
+      "top_score": 0.962789
+    },
+    {
+      "pair_id": "msa-3-014",
+      "answerable": true,
+      "top_score": 0.994344
+    },
+    {
+      "pair_id": "msa-3-015",
+      "answerable": true,
+      "top_score": 0.928912
+    },
+    {
+      "pair_id": "msa-3-016",
+      "answerable": true,
+      "top_score": 0.3469
+    },
+    {
+      "pair_id": "msa-3-017",
+      "answerable": true,
+      "top_score": 0.487442
+    },
+    {
+      "pair_id": "msa-3-018",
+      "answerable": true,
+      "top_score": 0.847231
+    },
+    {
+      "pair_id": "msa-3-019",
+      "answerable": true,
+      "top_score": 0.390728
+    },
+    {
+      "pair_id": "msa-3-020",
+      "answerable": true,
+      "top_score": 0.429749
+    },
+    {
+      "pair_id": "msa-3-021",
+      "answerable": true,
+      "top_score": 0.983276
+    },
+    {
+      "pair_id": "msa-3-022",
+      "answerable": true,
+      "top_score": 0.976493
+    },
+    {
+      "pair_id": "msa-3-023",
+      "answerable": true,
+      "top_score": 0.950894
+    },
+    {
+      "pair_id": "msa-3-024",
+      "answerable": true,
+      "top_score": 0.982191
+    },
+    {
+      "pair_id": "msa-3-025",
+      "answerable": true,
+      "top_score": 0.870081
+    },
+    {
+      "pair_id": "msa-3-026",
+      "answerable": true,
+      "top_score": 0.98162
+    },
+    {
+      "pair_id": "msa-3-027",
+      "answerable": true,
+      "top_score": 0.868336
+    },
+    {
+      "pair_id": "msa-3-028",
+      "answerable": true,
+      "top_score": 0.075991
+    },
+    {
+      "pair_id": "msa-3-029",
+      "answerable": true,
+      "top_score": 0.998512
+    },
+    {
+      "pair_id": "msa-3-030",
+      "answerable": true,
+      "top_score": 0.950373
+    },
+    {
+      "pair_id": "msa-3-031",
+      "answerable": true,
+      "top_score": 0.480724
+    },
+    {
+      "pair_id": "msa-3-032",
+      "answerable": true,
+      "top_score": 0.842769
+    },
+    {
+      "pair_id": "msa-3-033",
+      "answerable": true,
+      "top_score": 0.816453
+    },
+    {
+      "pair_id": "msa-3-034",
+      "answerable": true,
+      "top_score": 0.967663
+    },
+    {
+      "pair_id": "msa-3-035",
+      "answerable": true,
+      "top_score": 0.975321
+    },
+    {
+      "pair_id": "msa-3-036",
+      "answerable": true,
+      "top_score": 0.182457
+    },
+    {
+      "pair_id": "msa-4-001",
+      "answerable": true,
+      "top_score": 0.49447
+    },
+    {
+      "pair_id": "msa-4-002",
+      "answerable": true,
+      "top_score": 0.194197
+    },
+    {
+      "pair_id": "msa-4-003",
+      "answerable": true,
+      "top_score": 0.781778
+    },
+    {
+      "pair_id": "msa-4-004",
+      "answerable": true,
+      "top_score": 0.959768
+    },
+    {
+      "pair_id": "msa-4-005",
+      "answerable": true,
+      "top_score": 0.961388
+    },
+    {
+      "pair_id": "msa-4-006",
+      "answerable": true,
+      "top_score": 0.99841
+    },
+    {
+      "pair_id": "msa-4-007",
+      "answerable": true,
+      "top_score": 0.898116
+    },
+    {
+      "pair_id": "msa-4-008",
+      "answerable": true,
+      "top_score": 0.994841
+    },
+    {
+      "pair_id": "msa-4-009",
+      "answerable": true,
+      "top_score": 0.141177
+    },
+    {
+      "pair_id": "msa-4-010",
+      "answerable": true,
+      "top_score": 0.277806
+    },
+    {
+      "pair_id": "msa-4-011",
+      "answerable": true,
+      "top_score": 0.204723
+    },
+    {
+      "pair_id": "msa-4-012",
+      "answerable": true,
+      "top_score": 0.09861
+    },
+    {
+      "pair_id": "msa-4-013",
+      "answerable": true,
+      "top_score": 0.71498
+    },
+    {
+      "pair_id": "msa-4-014",
+      "answerable": true,
+      "top_score": 0.973705
+    },
+    {
+      "pair_id": "msa-4-015",
+      "answerable": true,
+      "top_score": 0.954733
+    },
+    {
+      "pair_id": "msa-4-016",
+      "answerable": true,
+      "top_score": 0.404506
+    },
+    {
+      "pair_id": "msa-4-017",
+      "answerable": true,
+      "top_score": 0.906031
+    },
+    {
+      "pair_id": "msa-4-018",
+      "answerable": true,
+      "top_score": 0.95551
+    },
+    {
+      "pair_id": "msa-4-019",
+      "answerable": true,
+      "top_score": 0.284483
+    },
+    {
+      "pair_id": "msa-4-020",
+      "answerable": true,
+      "top_score": 0.967015
+    },
+    {
+      "pair_id": "msa-4-021",
+      "answerable": true,
+      "top_score": 0.975132
+    },
+    {
+      "pair_id": "msa-4-022",
+      "answerable": true,
+      "top_score": 0.310759
+    },
+    {
+      "pair_id": "msa-4-023",
+      "answerable": true,
+      "top_score": 0.997924
+    },
+    {
+      "pair_id": "msa-4-024",
+      "answerable": true,
+      "top_score": 0.935008
+    },
+    {
+      "pair_id": "msa-4-025",
+      "answerable": true,
+      "top_score": 0.869415
+    },
+    {
+      "pair_id": "msa-4-026",
+      "answerable": true,
+      "top_score": 0.9178
+    },
+    {
+      "pair_id": "msa-4-027",
+      "answerable": true,
+      "top_score": 0.310068
+    },
+    {
+      "pair_id": "msa-4-028",
+      "answerable": true,
+      "top_score": 0.37165
+    },
+    {
+      "pair_id": "msa-4-029",
+      "answerable": true,
+      "top_score": 0.622906
+    },
+    {
+      "pair_id": "msa-4-030",
+      "answerable": true,
+      "top_score": 0.980586
+    },
+    {
+      "pair_id": "msa-4-031",
+      "answerable": true,
+      "top_score": 0.999741
+    },
+    {
+      "pair_id": "msa-4-032",
+      "answerable": true,
+      "top_score": 0.093437
+    },
+    {
+      "pair_id": "msa-4-033",
+      "answerable": true,
+      "top_score": 0.93645
+    },
+    {
+      "pair_id": "msa-4-034",
+      "answerable": true,
+      "top_score": 0.828481
+    },
+    {
+      "pair_id": "msa-4-035",
+      "answerable": true,
+      "top_score": 0.981669
+    },
+    {
+      "pair_id": "msa-4-036",
+      "answerable": true,
+      "top_score": 0.77526
+    },
+    {
+      "pair_id": "msa-5-001",
+      "answerable": true,
+      "top_score": 0.975935
+    },
+    {
+      "pair_id": "msa-5-002",
+      "answerable": true,
+      "top_score": 0.969219
+    },
+    {
+      "pair_id": "msa-5-003",
+      "answerable": true,
+      "top_score": 0.957875
+    },
+    {
+      "pair_id": "msa-5-004",
+      "answerable": true,
+      "top_score": 0.893054
+    },
+    {
+      "pair_id": "msa-5-005",
+      "answerable": true,
+      "top_score": 0.876976
+    },
+    {
+      "pair_id": "msa-5-006",
+      "answerable": true,
+      "top_score": 0.971307
+    },
+    {
+      "pair_id": "msa-5-007",
+      "answerable": true,
+      "top_score": 0.955955
+    },
+    {
+      "pair_id": "msa-5-008",
+      "answerable": true,
+      "top_score": 0.719419
+    },
+    {
+      "pair_id": "msa-5-009",
+      "answerable": true,
+      "top_score": 0.85772
+    },
+    {
+      "pair_id": "msa-5-010",
+      "answerable": true,
+      "top_score": 0.991036
+    },
+    {
+      "pair_id": "msa-5-011",
+      "answerable": true,
+      "top_score": 0.958979
+    },
+    {
+      "pair_id": "msa-5-012",
+      "answerable": true,
+      "top_score": 0.754158
+    },
+    {
+      "pair_id": "msa-5-013",
+      "answerable": true,
+      "top_score": 0.941448
+    },
+    {
+      "pair_id": "msa-5-014",
+      "answerable": true,
+      "top_score": 0.174376
+    },
+    {
+      "pair_id": "msa-5-015",
+      "answerable": true,
+      "top_score": 0.976594
+    },
+    {
+      "pair_id": "msa-5-016",
+      "answerable": true,
+      "top_score": 0.633375
+    },
+    {
+      "pair_id": "msa-5-017",
+      "answerable": true,
+      "top_score": 0.864667
+    },
+    {
+      "pair_id": "msa-5-018",
+      "answerable": true,
+      "top_score": 0.692127
+    },
+    {
+      "pair_id": "msa-5-019",
+      "answerable": true,
+      "top_score": 0.884578
+    },
+    {
+      "pair_id": "msa-5-020",
+      "answerable": true,
+      "top_score": 0.997521
+    },
+    {
+      "pair_id": "msa-5-021",
+      "answerable": true,
+      "top_score": 0.902879
+    },
+    {
+      "pair_id": "msa-5-022",
+      "answerable": true,
+      "top_score": 0.819926
+    },
+    {
+      "pair_id": "msa-5-023",
+      "answerable": true,
+      "top_score": 0.598637
+    },
+    {
+      "pair_id": "msa-5-024",
+      "answerable": true,
+      "top_score": 0.890948
+    },
+    {
+      "pair_id": "msa-5-025",
+      "answerable": true,
+      "top_score": 0.788625
+    },
+    {
+      "pair_id": "msa-5-026",
+      "answerable": true,
+      "top_score": 0.513193
+    },
+    {
+      "pair_id": "msa-5-027",
+      "answerable": true,
+      "top_score": 0.696884
+    },
+    {
+      "pair_id": "msa-5-028",
+      "answerable": true,
+      "top_score": 0.870898
+    },
+    {
+      "pair_id": "msa-5-029",
+      "answerable": true,
+      "top_score": 0.170138
+    },
+    {
+      "pair_id": "msa-5-030",
+      "answerable": true,
+      "top_score": 0.954162
+    },
+    {
+      "pair_id": "msa-5-031",
+      "answerable": true,
+      "top_score": 0.966042
+    },
+    {
+      "pair_id": "msa-5-032",
+      "answerable": true,
+      "top_score": 0.859726
+    },
+    {
+      "pair_id": "msa-5-033",
+      "answerable": true,
+      "top_score": 0.985438
+    },
+    {
+      "pair_id": "msa-5-034",
+      "answerable": true,
+      "top_score": 0.960362
+    },
+    {
+      "pair_id": "msa-5-035",
+      "answerable": true,
+      "top_score": 0.839153
+    },
+    {
+      "pair_id": "msa-5-036",
+      "answerable": true,
+      "top_score": 0.522183
+    },
+    {
+      "pair_id": "msa-5-037",
+      "answerable": true,
+      "top_score": 0.03197
+    },
+    {
+      "pair_id": "msa-5-038",
+      "answerable": true,
+      "top_score": 0.319569
+    },
+    {
+      "pair_id": "msa-5-039",
+      "answerable": true,
+      "top_score": 0.75081
+    },
+    {
+      "pair_id": "msa-5-040",
+      "answerable": true,
+      "top_score": 0.526824
+    },
+    {
+      "pair_id": "msa-5-041",
+      "answerable": true,
+      "top_score": 0.981375
+    },
+    {
+      "pair_id": "msa-6-001",
+      "answerable": true,
+      "top_score": 0.025634
+    },
+    {
+      "pair_id": "msa-6-002",
+      "answerable": true,
+      "top_score": 0.967326
+    },
+    {
+      "pair_id": "msa-6-003",
+      "answerable": true,
+      "top_score": 0.381521
+    },
+    {
+      "pair_id": "msa-6-004",
+      "answerable": true,
+      "top_score": 0.59852
+    },
+    {
+      "pair_id": "msa-6-005",
+      "answerable": true,
+      "top_score": 0.421536
+    },
+    {
+      "pair_id": "msa-6-006",
+      "answerable": true,
+      "top_score": 0.028884
+    },
+    {
+      "pair_id": "msa-6-007",
+      "answerable": true,
+      "top_score": 0.982527
+    },
+    {
+      "pair_id": "msa-6-008",
+      "answerable": true,
+      "top_score": 0.228322
+    },
+    {
+      "pair_id": "msa-6-009",
+      "answerable": true,
+      "top_score": 0.635924
+    },
+    {
+      "pair_id": "msa-6-010",
+      "answerable": true,
+      "top_score": 0.283989
+    },
+    {
+      "pair_id": "msa-6-011",
+      "answerable": true,
+      "top_score": 0.986266
+    },
+    {
+      "pair_id": "msa-6-012",
+      "answerable": true,
+      "top_score": 0.25498
+    },
+    {
+      "pair_id": "msa-6-013",
+      "answerable": true,
+      "top_score": 0.656999
+    },
+    {
+      "pair_id": "msa-6-014",
+      "answerable": true,
+      "top_score": 0.988821
+    },
+    {
+      "pair_id": "msa-6-015",
+      "answerable": true,
+      "top_score": 0.024796
+    },
+    {
+      "pair_id": "msa-6-016",
+      "answerable": true,
+      "top_score": 0.998851
+    },
+    {
+      "pair_id": "msa-6-017",
+      "answerable": true,
+      "top_score": 0.999366
+    },
+    {
+      "pair_id": "msa-6-018",
+      "answerable": true,
+      "top_score": 0.932005
+    },
+    {
+      "pair_id": "msa-6-019",
+      "answerable": true,
+      "top_score": 0.622142
+    },
+    {
+      "pair_id": "msa-6-020",
+      "answerable": true,
+      "top_score": 0.003919
+    },
+    {
+      "pair_id": "msa-6-021",
+      "answerable": true,
+      "top_score": 0.252599
+    },
+    {
+      "pair_id": "msa-6-022",
+      "answerable": true,
+      "top_score": 0.995565
+    },
+    {
+      "pair_id": "msa-6-023",
+      "answerable": true,
+      "top_score": 0.68705
+    },
+    {
+      "pair_id": "msa-6-024",
+      "answerable": true,
+      "top_score": 0.998865
+    },
+    {
+      "pair_id": "msa-6-025",
+      "answerable": true,
+      "top_score": 0.973826
+    },
+    {
+      "pair_id": "msa-6-026",
+      "answerable": true,
+      "top_score": 0.960577
+    },
+    {
+      "pair_id": "msa-6-027",
+      "answerable": true,
+      "top_score": 0.589646
+    },
+    {
+      "pair_id": "msa-6-028",
+      "answerable": true,
+      "top_score": 0.995799
+    },
+    {
+      "pair_id": "msa-6-029",
+      "answerable": true,
+      "top_score": 0.189198
+    },
+    {
+      "pair_id": "msa-6-030",
+      "answerable": true,
+      "top_score": 0.63312
+    },
+    {
+      "pair_id": "msa-6-031",
+      "answerable": true,
+      "top_score": 0.42366
+    },
+    {
+      "pair_id": "msa-6-032",
+      "answerable": true,
+      "top_score": 0.937532
+    },
+    {
+      "pair_id": "msa-6-033",
+      "answerable": true,
+      "top_score": 0.130883
+    },
+    {
+      "pair_id": "msa-6-034",
+      "answerable": true,
+      "top_score": 0.965632
+    },
+    {
+      "pair_id": "msa-6-035",
+      "answerable": true,
+      "top_score": 0.528389
+    },
+    {
+      "pair_id": "msa-6-036",
+      "answerable": true,
+      "top_score": 0.209061
+    },
+    {
+      "pair_id": "unans-001",
+      "answerable": false,
+      "top_score": 0.108371
+    },
+    {
+      "pair_id": "unans-002",
+      "answerable": false,
+      "top_score": 0.062203
+    },
+    {
+      "pair_id": "unans-003",
+      "answerable": false,
+      "top_score": 0.025861
+    },
+    {
+      "pair_id": "unans-004",
+      "answerable": false,
+      "top_score": 0.235537
+    },
+    {
+      "pair_id": "unans-005",
+      "answerable": false,
+      "top_score": 0.954712
+    },
+    {
+      "pair_id": "unans-006",
+      "answerable": false,
+      "top_score": 0.710627
+    },
+    {
+      "pair_id": "unans-007",
+      "answerable": false,
+      "top_score": 0.478782
+    },
+    {
+      "pair_id": "unans-008",
+      "answerable": false,
+      "top_score": 0.561022
+    },
+    {
+      "pair_id": "unans-009",
+      "answerable": false,
+      "top_score": 0.048586
+    },
+    {
+      "pair_id": "unans-010",
+      "answerable": false,
+      "top_score": 0.068315
+    },
+    {
+      "pair_id": "unans-011",
+      "answerable": false,
+      "top_score": 0.015587
+    },
+    {
+      "pair_id": "unans-012",
+      "answerable": false,
+      "top_score": 0.017803
+    },
+    {
+      "pair_id": "unans-013",
+      "answerable": false,
+      "top_score": 0.839035
+    },
+    {
+      "pair_id": "unans-014",
+      "answerable": false,
+      "top_score": 0.360051
+    },
+    {
+      "pair_id": "unans-015",
+      "answerable": false,
+      "top_score": 0.391629
+    }
+  ]
+}

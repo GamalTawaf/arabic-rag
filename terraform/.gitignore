@@ -1,0 +1,27 @@
+# Terraform state holds the generated database password in cleartext
+# (see secrets.tf). It never goes in git.
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+.terraform.tfstate.lock.info
+
+# Provider plugins and module cache — hundreds of MB, machine-specific.
+.terraform/
+
+# Real values. terraform.tfvars.example is committed; anything with a project id
+# or a key in it is not.
+*.tfvars
+*.tfvars.json
+!terraform.tfvars.example
+
+# Saved plans embed the full state, secrets included.
+*.tfplan
+plan.out
+
+# Editor / CLI leftovers
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json

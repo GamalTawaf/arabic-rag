@@ -183,7 +183,11 @@ class RuleBasedPlanner:
 
     **Measured** — 50 answerable Gulf pairs, dense retrieval, real corpus, against
     the 50 MSA questions carrying identical ground truth ("msa" = the ceiling this
-    is trying to reach)::
+    is trying to reach). **Per-leg retrieval depth 20**, i.e.
+    ``settings.top_k_retrieve``, which is what the service runs; the fused arm is
+    depth-sensitive and scores *better* at depth 10 (bge 0.82 / 0.95 / 0.7737,
+    e5 0.76 / 0.92 / 0.6512), so quoting it without the depth is meaningless.
+    Both tables live in ``benchmark/results/results.json`` under ``planning``::
 
         bge-m3          recall@3  recall@10     MRR      e5-large   recall@3  recall@10     MRR
         raw               0.7900     0.9300  0.7444      raw          0.7500     0.8500  0.6172

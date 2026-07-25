@@ -1,0 +1,39 @@
+# Copy to terraform.tfvars and fill in. terraform.tfvars is gitignored.
+#
+#   cp terraform.tfvars.example terraform.tfvars
+
+# Required. Everything else below is already the default — the lines are here so
+# the knobs are visible, not because they need changing.
+project_id = "your-gcp-project-id"
+
+# me-central1 is Doha. See the long note in variables.tf for why, and for the
+# alternatives (me-central2 Dammam, me-west1 Tel Aviv).
+region = "me-central1"
+
+# Pass a git sha for anything that outlives an afternoon.
+image_tag = "latest"
+
+# Smallest tier Cloud SQL sells. ~$0.017/hour with its disk. See sql.tf.
+db_tier    = "db-f1-micro"
+db_disk_gb = 10
+
+# 4 vCPU / 8Gi because the container carries bge-m3 + bge-reranker-v2-m3.
+container_cpu    = "4"
+container_memory = "8Gi"
+max_instances    = 2
+
+# Requires an image built with requirements-models.txt. See README.md.
+rerank_enabled = true
+
+# The app's own kill-switch, not a GCP budget alert.
+daily_spend_cap_usd = 5.0
+
+# true = the demo URL opens in a browser with no auth. Read the variable's
+# description in variables.tf before leaving this on past the demo.
+allow_unauthenticated = true
+
+# Empty disables app-level span export. Set to an OTLP/gRPC collector
+# (e.g. "http://localhost:4317" alongside a sidecar) to get the per-stage
+# plan/embed/retrieve/rerank spans. Cloud Run's own request spans reach Cloud
+# Trace either way.
+otel_exporter_otlp_endpoint = ""

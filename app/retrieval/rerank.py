@@ -21,10 +21,19 @@ for Gulf-dialect ones, because the cross-encoder is far less certain about
 dialect. Ranking is unaffected; the *absolute* value is not dialect-neutral.
 
 Consequence for the "not in corpus" floor: a single global
-``settings.rerank_min_score`` (currently 0.15) refuses roughly half of the
-answerable Gulf pairs while excluding every distractor by a wide margin. Pick
-that threshold from the eval set — dialect-aware, or applied after the
-dialect→MSA rewrite — not from intuition about what 0-1 "should" mean.
+``settings.rerank_min_score`` refuses roughly half of the answerable Gulf pairs
+while excluding every distractor by a wide margin.
+
+**That prediction was then measured at n=283 and it is worse than this note
+assumed, so the floor is now off** — ``rerank_min_score = 0.0``. The old 0.15
+refused 39 answerable questions (54% of Gulf pairs, 5.5% of MSA) to catch 7 of 15
+unanswerable ones, and all 39 had the gold article already in the context window.
+No threshold in a 0.00–0.90 sweep clears both a 10% false-refusal cap and a 50%
+refusal-precision floor. The finding is that this score is not a relevance
+detector at all; the ranked list it produces is still excellent. Sweep, dialect
+table and the three ranked alternatives (model abstention, a top1-vs-top5 margin
+feature, a dialect-aware threshold): ``docs/refusal-calibration.md``, reproducible
+with ``python -m evals.refusal --sweep``.
 
 ``torch`` and ``sentence_transformers`` are imported *inside* ``_build_model``
 on purpose: importing them at module scope costs seconds and hundreds of MB in

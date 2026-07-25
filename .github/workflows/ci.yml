@@ -164,11 +164,13 @@ jobs:
       - run: pip install -r requirements-dev.txt -r requirements-models.txt
 
       # Weights are immutable per model id, so the key never needs to change.
+      # The cache holds the embedding model AND BAAI/bge-reranker-v2-m3, which the
+      # latency replay's informational step pulls — hence the suffix.
       - name: Cache HuggingFace weights
         uses: actions/cache@v4
         with:
           path: ~/.cache/huggingface
-          key: hf-${{ runner.os }}-${{ env.MODEL_KEY }}
+          key: hf-${{ runner.os }}-${{ env.MODEL_KEY }}-plus-reranker-v2-m3
 
       - name: Migrate
         run: alembic upgrade head
@@ -181,3 +183,43 @@ jobs:
 
       - name: Gate — dense recall@10 vs evals/baseline.json
         run: python -m evals.gate --config dense --model "$MODEL_KEY"
+
+      # -----------------------------------------------------------------------
+      # Latency budget replay. Nightly only, and only here: it needs pgvector,
+      # the ingested corpus and the embedding weights that this job has already
+      # paid for. Putting it on the PR job would mean a ~2.2 GB model download
+      # per push to gate a wall-clock number.
+      #
+      # WHY THIS GATES `hybrid` AND NOT THE SHIPPED `hybrid+rerank`, measured
+      # rather than assumed. Re-running the same replay on this repo's dev host
+      # with MPS forced off (torch.backends.mps.is_available -> False), 30
+      # questions, bge, identical corpus:
+      #
+      #   stage      MPS p95    CPU p95    allocation
+      #   embed       32.8 ms    53.7 ms      120 ms   ok on both
+      #   retrieve    14.0 ms    13.4 ms       60 ms   Postgres-bound, unchanged
+      #   rerank     933.1 ms  3972.4 ms     1200 ms   CPU is 4.3x over budget
+      #
+      # The 1200 ms rerank allocation was derived on Apple Silicon. A GitHub
+      # runner has no GPU and fewer cores than the machine measured above, so
+      # gating hybrid+rerank here would paint this job red every single night for
+      # a reason that is not a regression — and a permanently red gate is a
+      # disabled gate. So the gating step drops the cross-encoder and enforces the
+      # stages that CPU does not change by an order of magnitude; the full config
+      # runs immediately after as a recorded, non-gating measurement.
+      #
+      # BUDGET in benchmark/replay.py is deliberately NOT widened to fit CPU. The
+      # honest fix, the day this service actually runs on CPU-only Cloud Run, is
+      # to re-derive the rerank allocation from CPU numbers in its own commit —
+      # or to stop shipping the cross-encoder there. terraform/README.md ranks
+      # this as the second thing expected to break on deploy.
+      # -----------------------------------------------------------------------
+      - name: Latency replay — plan/embed/cache/retrieve/fuse p95 vs BUDGET
+        run: python -m benchmark.replay --n 30 --config hybrid --model "$MODEL_KEY"
+
+      # Informational: records what the cross-encoder costs without a GPU, which
+      # is the number the Cloud Run deployment story is missing. Expected to exit
+      # 1; read the printed p95, do not treat a failure here as a broken build.
+      - name: Latency replay — full hybrid+rerank on CPU (recorded, not gating)
+        continue-on-error: true
+        run: python -m benchmark.replay --n 30 --config hybrid+rerank --model "$MODEL_KEY"

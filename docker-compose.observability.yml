@@ -1,0 +1,76 @@
+# Prometheus + Grafana for the /metrics the service already exports.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d
+#   open http://localhost:3000            # anonymous admin, no login, dashboard provisioned
+#
+# Both -f flags are required: this file scrapes the `app` service defined in
+# docker-compose.yml, and compose only puts them on one network when it is told
+# about both. Running uvicorn on the host instead works too — prometheus.yml
+# also scrapes host.docker.internal:8000. See dashboards/README.md.
+#
+# ponytail: the Grafana provisioning YAML lives inline as compose `configs`
+# rather than as two more files on disk. Two four-line YAMLs that exist only to
+# be bind-mounted are worth less than one file you can read top to bottom.
+# Ceiling: `content:` needs Compose >= 2.23 (verified on v5.1.4).
+
+services:
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./dashboards/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    extra_hosts:
+      # Docker Desktop provides this name; Linux does not, so map it explicitly.
+      - "host.docker.internal:host-gateway"
+
+  grafana:
+    image: grafana/grafana:11.5.2
+    ports:
+      - "3000:3000"
+    environment:
+      # No login wall: this is a local demo of a service with no auth of its own.
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_AUTH_DISABLE_LOGIN_FORM=true
+      - GF_USERS_DEFAULT_THEME=light
+    volumes:
+      # The dashboard JSON is read from the repo, so editing it and restarting
+      # grafana is the whole edit loop.
+      - ./dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    configs:
+      - source: grafana_datasource
+        target: /etc/grafana/provisioning/datasources/prometheus.yml
+      - source: grafana_dashboard_provider
+        target: /etc/grafana/provisioning/dashboards/arabic-rag.yml
+    depends_on:
+      - prometheus
+
+configs:
+  grafana_datasource:
+    content: |
+      apiVersion: 1
+      datasources:
+        - name: Prometheus
+          type: prometheus
+          uid: prometheus
+          access: proxy
+          url: http://prometheus:9090
+          isDefault: true
+
+  grafana_dashboard_provider:
+    content: |
+      apiVersion: 1
+      providers:
+        - name: arabic-rag
+          type: file
+          allowUiUpdates: false
+          options:
+            path: /var/lib/grafana/dashboards
+            foldersFromFilesStructure: false
+
+volumes:
+  prometheus_data:
+  grafana_data:

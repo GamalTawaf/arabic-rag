@@ -1,0 +1,16 @@
+-- Create the database the test suite uses, alongside the dev database.
+--
+-- Postgres' entrypoint creates exactly one database (POSTGRES_DB=rag_db), and
+-- tests/conftest.py connects to a SECOND one, rag_test, so that a test run can
+-- DROP SCHEMA public CASCADE without touching the 233 ingested dev chunks.
+--
+-- Without this file a clean clone is worse than broken, it is quietly
+-- incomplete: conftest's pg_url fixture calls pytest.skip() when it cannot
+-- connect, so `pytest` reports "389 passed, 153 skipped" and exits 0. Every
+-- database-backed test — search, chunk model, ingestion pipeline, the /ask and
+-- /stats endpoints — is in those 153.
+--
+-- Runs once, on an empty data volume only (docker-entrypoint-initdb.d). If the
+-- volume already exists, create it by hand instead:
+--     docker compose exec db createdb -U rag_user rag_test
+CREATE DATABASE rag_test OWNER rag_user;

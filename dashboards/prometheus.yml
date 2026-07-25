@@ -1,0 +1,29 @@
+# Prometheus config for the arabic-rag dashboard. Mounted read-only into the
+# prometheus container by docker-compose.observability.yml.
+#
+# metrics_path is "/metrics/" WITH the trailing slash on purpose: app/main.py
+# does `app.mount("/metrics", metrics_app())`, and Starlette answers a bare
+# /metrics with a 307 to /metrics/. Prometheus would follow the redirect, but
+# then every scrape costs two requests and `up` hides a config mistake.
+
+global:
+  scrape_interval: 5s # short, because a demo run is a few dozen requests
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: arabic-rag
+    metrics_path: /metrics/
+    static_configs:
+      # Two targets, one job, and normally EXACTLY ONE OF THEM IS UP:
+      #   app:8000                  - both compose files up (see the README)
+      #   host.docker.internal:8000 - uvicorn running on the host
+      # Every dashboard panel sums over instance, so the down target
+      # contributes nothing rather than halving a rate. `up{job="arabic-rag"}`
+      # showing 1 up / 1 down is the expected state, not a fault.
+      - targets:
+          - app:8000
+          - host.docker.internal:8000
+
+  - job_name: prometheus
+    static_configs:
+      - targets: [localhost:9090]

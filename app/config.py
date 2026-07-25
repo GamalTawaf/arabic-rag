@@ -13,7 +13,12 @@ class Settings(BaseSettings):
     top_k_retrieve: int = 20
     top_k_context: int = 5
     rerank_enabled: bool = True
-    rerank_min_score: float = 0.15  # below this -> "not in corpus"
+    # Below this -> "not in corpus"; 0.0 disables the score gate (sigmoid scores are
+    # never negative) while an empty result set still refuses. Calibrated over all
+    # 283 eval pairs: refusal precision peaks at 0.171, and the old 0.15 refused 39
+    # answerable questions — every one with the gold article already in context — to
+    # catch 7 of 15 unanswerable. See docs/refusal-calibration.md.
+    rerank_min_score: float = 0.0
 
     # Generation (provider-agnostic; first entry is primary, rest are failover)
     providers: str = "anthropic,gemini"

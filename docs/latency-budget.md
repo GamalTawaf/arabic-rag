@@ -123,7 +123,7 @@ Three properties that make it a gate rather than a report:
   adding it to `BUDGET` fails the run, so the budget cannot silently stop
   describing the pipeline.
 - **The first request is a discarded warm-up.** `bge-m3` and the cross-encoder
-  load their weights on first use — measured at 4.2 s and 2.8 s in the run below.
+  load their weights on first use — measured at 5.3 s and 3.3 s in the run below.
   In a 30-sample p95 that single request *is* the p95, and the gate would be
   measuring process start-up instead of steady-state latency. The warm-up cost is
   real, so it is printed rather than dropped; it belongs to a deploy, not to a
@@ -143,34 +143,78 @@ replay: 30 eval questions   config=hybrid+rerank   model=bge   seed=0
 
   stage             n     p50 ms     p95 ms     budget   status
   plan             30       0.05       0.07          5   ok
-  embed            30      20.94      29.59        120   ok
-  cache.lookup     30       1.78       2.09         25   ok
-  retrieve         30       8.21      14.03         60   ok
+  embed            30      21.25      32.75        120   ok
+  cache.lookup     30       2.18       2.52         25   ok
+  retrieve         30       8.49      14.01         60   ok
   fuse             30       0.01       0.04          5   ok
-  rerank           30     899.10     914.06       1200   ok
+  rerank           30     912.54     933.11       1200   ok
   generate          -          -          -       2000   SKIPPED — no generation provider configured
 
   GENERATION NOT MEASURED: no provider is configured, so the stage that dominates the
   budget did not run and the end-to-end total is not a 3.5 s check. Set ANTHROPIC_API_KEY or GOOGLE_API_KEY
   to measure it.
-  warm-up request (discarded, lazy model load): plan 0 ms  embed 4234 ms  cache.lookup 30 ms  retrieve 26 ms  fuse 0 ms  rerank 2828 ms
-  cache hits: 0/30   refusals: 5/30
+  warm-up request (discarded, lazy model load): plan 0 ms  embed 5311 ms  cache.lookup 30 ms  retrieve 27 ms  fuse 0 ms  rerank 3342 ms
+  cache hits: 0/30   refusals: 0/30
 ```
 
-Three consecutive runs agreed to within 3 ms on every stage except `embed`
-(20.9–21.4 ms p50), so the p50s are stable; the p95s are one sample each and
-should be read as "the slow request in thirty".
+Repeated runs agree to within a few ms on every p50 (`embed` 20.9–21.6 ms,
+`rerank` 899–913 ms across four runs), so the p50s are stable; the p95s are one
+sample each and should be read as "the slow request in thirty".
 
-Measured retrieval path: **~960 ms p95** against an allocation of 1415 ms, so the
+Measured retrieval path: **~980 ms p95** against an allocation of 1415 ms, so the
 retrieval half of the budget has ~30% headroom on this hardware. `cache hits: 0`
 is expected — the replay never generates, so it never stores, so every request
-takes the cold path, which is the path a budget should be measured on. `refusals:
-5/30` are questions whose top rerank score fell below `rerank_min_score`; those
-requests skip generation by design, which is one more reason the total is not
-checkable here.
+takes the cold path, which is the path a budget should be measured on.
+
+`refusals: 0/30` is a **change**, and it is the one number in this file that
+moved for a reason other than noise. Earlier runs of this same replay refused
+**5 of 30** — every one of them an answerable labour-law question, three of them
+Gulf — because `rerank_min_score` was a hand-picked 0.15. Sweeping the threshold
+over all 283 eval pairs showed that floor refusing 39 answerable questions to
+catch 7 of 15 unanswerable ones, at a 10x dialect disparity, so it is now `0.0`.
+Full measurement and the upgrade paths: [refusal-calibration.md](refusal-calibration.md).
+The latency consequence is that all 30 requests now run the whole retrieval path,
+which is what this budget is supposed to measure.
 
 At n=30 the nearest-rank p95 is the second-largest sample. Treat it as "the slow
 request in thirty", not as a smooth quantile.
+
+### What it costs without a GPU
+
+The single most load-bearing assumption in this budget is that the reranker runs
+on an accelerator. That assumption is now measured rather than asserted: the same
+replay, the same host, the same corpus, with MPS forced off
+(`torch.backends.mps.is_available` patched to `False`), so the *only* variable is
+the device.
+
+| stage | MPS p95 | CPU p95 | ratio | allocation | CPU verdict |
+|---|---|---|---|---|---|
+| `plan` | 0.07 ms | 0.07 ms | 1.0x | 5 ms | ok |
+| `embed` | 32.8 ms | 53.7 ms | 1.6x | 120 ms | ok |
+| `cache.lookup` | 2.5 ms | 3.0 ms | 1.2x | 25 ms | ok |
+| `retrieve` | 14.0 ms | 13.4 ms | 1.0x | 60 ms | ok, Postgres-bound |
+| `fuse` | 0.04 ms | 0.04 ms | 1.0x | 5 ms | ok |
+| **`rerank`** | **933.1 ms** | **3972.4 ms** | **4.3x** | **1200 ms** | **OVER by 2772 ms** |
+
+Everything except the cross-encoder survives losing the GPU. The cross-encoder
+does not: 4.3x, and that is on a laptop's performance cores, not on the 4 shared
+vCPUs Cloud Run is configured with in `terraform/run.tf`. Reranking 20 candidates
+is ~20 forward passes through a 568M-parameter model; there is no tuning that
+recovers a factor of four.
+
+Three consequences, all of them already wired:
+
+1. **CI gates `hybrid`, not `hybrid+rerank`.** The nightly replay in
+   `.github/workflows/ci.yml` runs on a CPU-only GitHub runner, so it enforces
+   the five stages above the rerank line and runs the full config immediately
+   after as a *recorded, non-gating* step. `BUDGET` is not widened to fit CPU —
+   widening a budget to make a gate green is how a budget stops meaning anything.
+2. **The per-request `config` switch is the mitigation.** `/ask` accepts
+   `dense` or `hybrid`, which costs 1.9 points of recall@10 (0.965 → 0.946) and
+   removes ~4 s of CPU latency. That trade is the reason the switch exists.
+3. **On Cloud Run, this is the first thing expected to break** — it is item 2 in
+   `terraform/README.md`'s ranked list, and `rerank_enabled` is a Terraform
+   variable precisely so it can be turned off without a rebuild.
 
 ## Known gaps
 
@@ -179,6 +223,7 @@ request in thirty", not as a smooth quantile.
   per-stage retrieval allocations are enforced today.
 - Numbers are single-host, single-client, no concurrency. Connection-pool
   contention, HNSW cold cache, and cross-AZ latency to Cloud SQL are all absent.
-- The reranker allocation assumes MPS. On a CPU-only Cloud Run instance the
-  cross-encoder is the first thing that will blow this budget, and the mitigation
-  is already available per request: `config=hybrid` or `config=dense`.
+- The CPU column above is *this laptop's* CPU. A 4-vCPU Cloud Run container is
+  slower again, and cold-start weight loading (~5.3 s embed + ~3.3 s rerank on
+  first request) is not in any allocation because it belongs to a deploy, not a
+  request — but with `min_instances = 0` a user pays it.

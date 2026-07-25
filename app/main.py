@@ -8,7 +8,7 @@ test suite asserts on, because CI and the ``/health`` path must not pay for a
 
 from fastapi import FastAPI
 
-from app.api import ask, health, stats
+from app.api import ask, health, ingest, stats
 from app.config import settings
 from app.observability.tracing import metrics_app, setup_tracing
 
@@ -16,6 +16,7 @@ app = FastAPI(title=settings.service_name)
 
 app.include_router(health.router)
 app.include_router(ask.router)
+app.include_router(ingest.router)
 app.include_router(stats.router)
 
 # No-op unless an exporter is configured (OTEL_EXPORTER_OTLP_ENDPOINT or
