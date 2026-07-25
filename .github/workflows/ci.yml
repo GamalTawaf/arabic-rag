@@ -8,6 +8,24 @@ on:
 jobs:
   ci:
     runs-on: ubuntu-latest
+
+    # Without this the DB-backed tests skip themselves and CI goes green on
+    # roughly half the suite. Same image as docker-compose.
+    services:
+      db:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: rag_user
+          POSTGRES_PASSWORD: rag_pass
+          POSTGRES_DB: rag_db
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U rag_user -d rag_db"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
     steps:
       - uses: actions/checkout@v4
 

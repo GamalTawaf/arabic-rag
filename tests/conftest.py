@@ -23,7 +23,7 @@ def pg_url():
         try:
             async with engine.connect():
                 return True
-        except Exception:
+        except Exception:  # noqa: BLE001 — a probe: any failure means "no usable DB"
             return False
         finally:
             await engine.dispose()
@@ -38,15 +38,20 @@ async def db_session(pg_url):
     from sqlalchemy import text
 
     engine = create_async_engine(pg_url)
+    # ponytail: TRUNCATE, not drop_all/create_all. Tests share the dev database, and
+    # dropping the tables left it schema-less while alembic_version still read "0001",
+    # which broke `python -m ingestion ingest` right after a test run. Truncating gives
+    # the same clean slate per test without the collateral damage. Ceiling: no schema
+    # isolation between a test run and local data. Upgrade path: point
+    # TEST_DATABASE_URL at a dedicated database.
+    tables = ", ".join(table.name for table in Base.metadata.sorted_tables)
     async with engine.begin() as conn:
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-        await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
+        await conn.execute(text(f"TRUNCATE TABLE {tables} RESTART IDENTITY CASCADE"))
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
     async with session_factory() as session:
         yield session
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
     await engine.dispose()
 
 

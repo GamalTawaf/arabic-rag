@@ -1,0 +1,66 @@
+{
+  "corpus_version": "2026-07-24",
+  "source": "Al Meezan — Qatar Legal Portal (https://www.almeezan.qa)",
+  "documents": [
+    {
+      "doc_id": "qatar-labour-law-14-2004",
+      "title": "قانون رقم (14) لسنة 2004 بإصدار قانون العمل",
+      "title_en": "Qatar Labour Law No. 14 of 2004 (as amended)",
+      "source_url": "https://www.almeezan.qa/LawView.aspx?opt=&LawID=3961&language=ar",
+      "license": "Public legal text. Qatari laws and official texts are excluded from copyright protection by Art. 3 of Law No. 7 of 2002 on the Protection of Copyright and Neighbouring Rights. Retrieved from Al Meezan (Qatar Legal Portal), which publishes it as an unofficial consolidated copy.",
+      "attribution": "Al Meezan — Qatar Legal Portal, Ministry of Justice, State of Qatar",
+      "fetched_date": "2026-07-24",
+      "article_count": 164,
+      "start_marker": "نحن حمد بن خليفة آل ثاني أمير دولة قطر،",
+      "end_marker": "الرجاء عدم اعتبار المادة المعروضة أعلاه رسمية"
+    },
+    {
+      "doc_id": "qatar-domestic-workers-law-15-2017",
+      "title": "قانون رقم (15) لسنة 2017 بشأن المستخدمين في المنازل",
+      "title_en": "Qatar Law No. 15 of 2017 on Domestic Workers",
+      "source_url": "https://www.almeezan.qa/LawView.aspx?opt=&LawID=7312&language=ar",
+      "license": "Public legal text. Qatari laws and official texts are excluded from copyright protection by Art. 3 of Law No. 7 of 2002 on the Protection of Copyright and Neighbouring Rights. Retrieved from Al Meezan (Qatar Legal Portal), which publishes it as an unofficial consolidated copy.",
+      "attribution": "Al Meezan — Qatar Legal Portal, Ministry of Justice, State of Qatar",
+      "fetched_date": "2026-07-24",
+      "article_count": 24,
+      "start_marker": "نحن تميم بن حمد آل ثاني أمير دولة قطر،",
+      "end_marker": "الرجاء عدم اعتبار المادة المعروضة أعلاه رسمية"
+    },
+    {
+      "doc_id": "qatar-minimum-wage-law-17-2020",
+      "title": "قانون رقم (17) لسنة 2020 بشأن تحديد الحد الأدنى لأجور العمال والمستخدمين في المنازل",
+      "title_en": "Qatar Law No. 17 of 2020 on the Minimum Wage for Workers and Domestic Workers",
+      "source_url": "https://www.almeezan.qa/LawView.aspx?opt=&LawID=8426&language=ar",
+      "license": "Public legal text. Qatari laws and official texts are excluded from copyright protection by Art. 3 of Law No. 7 of 2002 on the Protection of Copyright and Neighbouring Rights. Retrieved from Al Meezan (Qatar Legal Portal), which publishes it as an unofficial consolidated copy.",
+      "attribution": "Al Meezan — Qatar Legal Portal, Ministry of Justice, State of Qatar",
+      "fetched_date": "2026-07-24",
+      "article_count": 8,
+      "start_marker": "نحن تميم بن حمد آل ثاني أمير دولة قطر،",
+      "end_marker": "الرجاء عدم اعتبار المادة المعروضة أعلاه رسمية"
+    },
+    {
+      "doc_id": "qatar-heat-stress-decision-17-2021",
+      "title": "قرار وزير التنمية الإدارية والعمل والشؤون الاجتماعية رقم (17) لسنة 2021 بشأن الاحتياطات اللازمة لحماية العمال من الإجهاد الحراري",
+      "title_en": "Ministerial Decision No. 17 of 2021 on Precautions Protecting Workers from Heat Stress",
+      "source_url": "https://www.almeezan.qa/LawView.aspx?opt=&LawID=8632&language=ar",
+      "license": "Public legal text. Qatari laws and official texts are excluded from copyright protection by Art. 3 of Law No. 7 of 2002 on the Protection of Copyright and Neighbouring Rights. Retrieved from Al Meezan (Qatar Legal Portal), which publishes it as an unofficial consolidated copy.",
+      "attribution": "Al Meezan — Qatar Legal Portal, Ministry of Justice, State of Qatar",
+      "fetched_date": "2026-07-24",
+      "article_count": 10,
+      "start_marker": "وزير التنمية الإدارية والعمل والشؤون الاجتماعية،",
+      "end_marker": "الرجاء عدم اعتبار المادة المعروضة أعلاه رسمية"
+    },
+    {
+      "doc_id": "qatar-labour-dispute-committees-decision-6-2018",
+      "title": "قرار مجلس الوزراء رقم (6) لسنة 2018 بتشكيل لجان فض المنازعات العمالية والقواعد والإجراءات الواجب اتباعها أمامها وآلية تنفيذ قراراتها وتحديد مكافآتها",
+      "title_en": "Cabinet Decision No. 6 of 2018 on Labour Dispute Resolution Committees",
+      "source_url": "https://www.almeezan.qa/LawView.aspx?opt=&LawID=7568&language=ar",
+      "license": "Public legal text. Qatari laws and official texts are excluded from copyright protection by Art. 3 of Law No. 7 of 2002 on the Protection of Copyright and Neighbouring Rights. Retrieved from Al Meezan (Qatar Legal Portal), which publishes it as an unofficial consolidated copy.",
+      "attribution": "Al Meezan — Qatar Legal Portal, Ministry of Justice, State of Qatar",
+      "fetched_date": "2026-07-24",
+      "article_count": 20,
+      "start_marker": "مجلس الوزراء،",
+      "end_marker": "الرجاء عدم اعتبار المادة المعروضة أعلاه رسمية"
+    }
+  ]
+}
