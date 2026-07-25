@@ -1,0 +1,1286 @@
+{
+  "metadata": {
+    "timestamp": "2026-07-25T04:39:06+00:00",
+    "git_commit": "6b70b6d",
+    "device": "mps",
+    "database_url": "postgresql+asyncpg://rag_user:***@localhost:5433/rag_db",
+    "corpus": {
+      "chunks": 233,
+      "documents": 5,
+      "embedded": {
+        "e5": 233,
+        "bge": 233,
+        "openai": 0,
+        "cohere": 0
+      }
+    },
+    "dataset": {
+      "path": "evals/data/eval_pairs.jsonl",
+      "n_pairs": 283,
+      "answerable": 268,
+      "unanswerable": 15,
+      "msa": 229,
+      "gulf": 54
+    },
+    "models": {
+      "bge": {
+        "status": "run",
+        "name": "BAAI/bge-m3",
+        "chunks_embedded": 233
+      },
+      "cohere": {
+        "status": "not_run",
+        "reason": "no API key"
+      },
+      "e5": {
+        "status": "run",
+        "name": "intfloat/multilingual-e5-large",
+        "chunks_embedded": 233
+      },
+      "openai": {
+        "status": "not_run",
+        "reason": "no API key"
+      }
+    },
+    "configs": [
+      "dense",
+      "lexical",
+      "hybrid",
+      "hybrid+rerank"
+    ],
+    "splits": [
+      "all",
+      "msa",
+      "gulf",
+      "msa_matched"
+    ],
+    "wall_clock_s": 1280.5,
+    "smoke_run": false
+  },
+  "results": [
+    {
+      "model": null,
+      "config": "lexical",
+      "split": "all",
+      "n_pairs": 283,
+      "n": 268,
+      "recall@3": 0.1884,
+      "recall@10": 0.3563,
+      "mrr": 0.1808,
+      "hit@3": 0.2015,
+      "hit@10": 0.3731,
+      "latency": {
+        "mean_ms": 2.55,
+        "p95_ms": 4.06,
+        "embed_batch_ms": 0.0
+      },
+      "unanswerable": {
+        "n": 15,
+        "with_hits": 15,
+        "top_score_mean": 2.1067,
+        "top_score_max": 3.5
+      },
+      "by_doc": {
+        "qatar-domestic-workers-law-15-2017": {
+          "n": 19,
+          "recall@10": 0.1316
+        },
+        "qatar-heat-stress-decision-17-2021": {
+          "n": 9,
+          "recall@10": 0.3333
+        },
+        "qatar-labour-dispute-committees-decision-6-2018": {
+          "n": 10,
+          "recall@10": 0.3
+        },
+        "qatar-labour-law-14-2004": {
+          "n": 224,
+          "recall@10": 0.3884
+        },
+        "qatar-minimum-wage-law-17-2020": {
+          "n": 6,
+          "recall@10": 0.0
+        }
+      },
+      "shared_with": [
+        "e5",
+        "bge"
+      ],
+      "note": "lexical search never touches an embedding column; this single measurement applies unchanged to every model listed in shared_with"
+    },
+    {
+      "model": null,
+      "config": "lexical",
+      "split": "msa",
+      "n_pairs": 229,
+      "n": 218,
+      "recall@3": 0.195,
+      "recall@10": 0.3463,
+      "mrr": 0.186,
+      "hit@3": 0.211,
+      "hit@10": 0.367,
+      "latency": {
+        "mean_ms": 2.4,
+        "p95_ms": 3.47,
+        "embed_batch_ms": 0.0
+      },
+      "unanswerable": {
+        "n": 11,
+        "with_hits": 11,
+        "top_score_mean": 2.3091,
+        "top_score_max": 3.5
+      },
+      "by_doc": {
+        "qatar-domestic-workers-law-15-2017": {
+          "n": 15,
+          "recall@10": 0.1
+        },
+        "qatar-heat-stress-decision-17-2021": {
+          "n": 6,
+          "recall@10": 0.3333
+        },
+        "qatar-labour-dispute-committees-decision-6-2018": {
+          "n": 10,
+          "recall@10": 0.3
+        },
+        "qatar-labour-law-14-2004": {
+          "n": 182,
+          "recall@10": 0.3791
+        },
+        "qatar-minimum-wage-law-17-2020": {
+          "n": 5,
+          "recall@10": 0.0
+        }
+      },
+      "shared_with": [
+        "e5",
+        "bge"
+      ],
+      "note": "lexical search never touches an embedding column; this single measurement applies unchanged to every model listed in shared_with"
+    },
+    {
+      "model": null,
+      "config": "lexical",
+      "split": "gulf",
+      "n_pairs": 54,
+      "n": 50,
+      "recall@3": 0.16,
+      "recall@10": 0.4,
+      "mrr": 0.1583,
+      "hit@3": 0.16,
+      "hit@10": 0.4,
+      "latency": {
+        "mean_ms": 1.94,
+        "p95_ms": 3.02,
+        "embed_batch_ms": 0.0
+      },
+      "unanswerable": {
+        "n": 4,
+        "with_hits": 4,
+        "top_score_mean": 1.55,
+        "top_score_max": 2.0
+      },
+      "by_doc": {
+        "qatar-domestic-workers-law-15-2017": {
+          "n": 4,
+          "recall@10": 0.25
+        },
+        "qatar-heat-stress-decision-17-2021": {
+          "n": 3,
+          "recall@10": 0.3333
+        },
+        "qatar-labour-law-14-2004": {
+          "n": 42,
+          "recall@10": 0.4286
+        },
+        "qatar-minimum-wage-law-17-2020": {
+          "n": 1,
+          "recall@10": 0.0
+        }
+      },
+      "shared_with": [
+        "e5",
+        "bge"
+      ],
+      "note": "lexical search never touches an embedding column; this single measurement applies unchanged to every model listed in shared_with"
+    },
+    {
+      "model": null,
+      "config": "lexical",
+      "split": "msa_matched",
+      "n_pairs": 68,
+      "n": 68,
+      "recall@3": 0.2647,
+      "recall@10": 0.4779,
+      "mrr": 0.2343,
+      "hit@3": 0.2794,
+      "hit@10": 0.4853,
+      "latency": {
+        "mean_ms": 2.46,
+        "p95_ms": 3.81,
+        "embed_batch_ms": 0.0
+      },
+      "unanswerable": {
+        "n": 0,
+        "with_hits": 0,
+        "top_score_mean": 0.0,
+        "top_score_max": 0.0
+      },
+      "by_doc": {
+        "qatar-domestic-workers-law-15-2017": {
+          "n": 6,
+          "recall@10": 0.0
+        },
+        "qatar-heat-stress-decision-17-2021": {
+          "n": 4,
+          "recall@10": 0.5
+        },
+        "qatar-labour-law-14-2004": {
+          "n": 57,
+          "recall@10": 0.5351
+        },
+        "qatar-minimum-wage-law-17-2020": {
+          "n": 1,
+          "recall@10": 0.0
+        }
+      },
+      "shared_with": [
+        "e5",
+        "bge"
+      ],
+      "note": "lexical search never touches an embedding column; this single measurement applies unchanged to every model listed in shared_with"
+    },
+    {
+      "model": "e5",
+      "config": "dense",
+      "split": "all",
+      "n_pairs": 283,
+      "n": 268,
+      "recall@3": 0.8545,
+      "recall@10": 0.9272,
+      "mrr": 0.8184,
+      "hit@3": 0.8993,
+      "hit@10": 0.9478,
+      "latency": {
+        "mean_ms": 2.6,
+        "p95_ms": 3.58,
+        "embed_batch_ms": 8970.64
+      },
+      "unanswerable": {
+        "n": 15,
+        "with_hits": 15,
+        "top_score_mean": 0.8471,
+        "top_score_max": 0.8677
+      },
+      "by_doc": {
+        "qatar-domestic-workers-law-15-2017": {
+          "n": 19,
+          "recall@10": 0.8684
+        },
+        "qatar-heat-stress-decision-17-2021": {
+          "n": 9,
+          "recall@10": 0.8889
+        },
+        "qatar-labour-dispute-committees-decision-6-2018": {
+          "n": 10,
+          "recall@10": 0.9
+        },
+        "qatar-labour-law-14-2004": {
+          "n": 224,
+          "recall@10": 0.9375
+        },
+        "qatar-minimum-wage-law-17-2020": {
+          "n": 6,
+          "recall@10": 0.8333
+        }
+      }
+    },
+    {
+      "model": "e5",
+      "config": "dense",
+      "split": "msa",
+      "n_pairs": 229,
+      "n": 218,
+      "recall@3": 0.8784,
+      "recall@10": 0.945,
+      "mrr": 0.8645,
+      "hit@3": 0.9266,
+      "hit@10": 0.9633,
+      "latency": {
+        "mean_ms": 1.44,
+        "p95_ms": 2.21,
+        "embed_batch_ms": 2863.34
+      },
+      "unanswerable": {
+        "n": 11,
+        "with_hits": 11,
+        "top_score_mean": 0.8468,
+        "top_score_max": 0.8677
+      },
+      "by_doc": {
+        "qatar-domestic-workers-law-15-2017": {
+          "n": 15,
+          "recall@10": 0.9
+        },
+        "qatar-heat-stress-decision-17-2021": {
+          "n": 6,
+          "recall@10": 0.8333
+        },
+        "qatar-labour-dispute-committees-decision-6-2018": {
+          "n": 10,
+          "recall@10": 0.9
+        },
+        "qatar-labour-law-14-2004": {
+          "n": 182,
+          "recall@10": 0.9588
+        },
+        "qatar-minimum-wage-law-17-2020": {
+          "n": 5,
+          "recall@10": 0.8
+        }
+      }
+    },
+    {
+      "model": "e5",
+      "config": "dense",
+      "split": "gulf",
+      "n_pairs": 54,
+      "n": 50,
+      "recall@3": 0.75,
+      "recall@10": 0.85,
+      "mrr": 0.6172,
+      "hit@3": 0.78,
+      "hit@10": 0.88,
+      "latency": {
+        "mean_ms": 2.4,
+        "p95_ms": 4.72,
+        "embed_batch_ms": 258.76
+      },
+      "unanswerable": {
+        "n": 4,
+        "with_hits": 4,
+        "top_score_mean": 0.8477,
+        "top_score_max": 0.8661
+      },
+      "by_doc": {
+        "qatar-domestic-workers-law-15-2017": {
+          "n": 4,
+          "recall@10": 0.75
+        },
+        "qatar-heat-stress-decision-17-2021": {
+          "n": 3,
+          "recall@10": 1.0
+        },
+        "qatar-labour-law-14-2004": {
+          "n": 42,
+          "recall@10": 0.8452
+        },
+        "qatar-minimum-wage-law-17-2020": {
+          "n": 1,
+          "recall@10": 1.0
+        }
+      }
+    },
+    {
+      "model": "e5",
+      "config": "dense",
+      "split": "msa_matched",
+      "n_pairs": 68,
+      "n": 68,
+      "recall@3": 0.8824,
+      "recall@10": 0.9485,
+      "mrr": 0.8146,
+      "hit@3": 0.9118,
+      "hit@10": 0.9559,
+      "latency": {
+        "mean_ms": 2.46,
+        "p95_ms": 3.93,
+        "embed_batch_ms": 291.21
+      },
+      "unanswerable": {
+        "n": 0,
+        "with_hits": 0,
+        "top_score_mean": 0.0,
+        "top_score_max": 0.0
+      },
+      "by_doc": {
+        "qatar-domestic-workers-law-15-2017": {
+          "n": 6,
+          "recall@10": 1.0
+        },
+        "qatar-heat-stress-decision-17-2021": {
+          "n": 4,
+          "recall@10": 1.0
+        },
+        "qatar-labour-law-14-2004": {
+          "n": 57,
+          "recall@10": 0.9386
+        },
+        "qatar-minimum-wage-law-17-2020": {
+          "n": 1,
+          "recall@10": 1.0
+        }
+      }
+    },
+    {
+      "model": "e5",
+      "config": "hybrid",
+      "split": "all",
+      "n_pairs": 283,
+      "n": 268,
+      "recall@3": 0.5019,
+      "recall@10": 0.9198,
+      "mrr": 0.4736,
+      "hit@3": 0.5373,
+      "hit@10": 0.944,
+      "latency": {
+        "mean_ms": 3.93,
+        "p95_ms": 5.28,
+        "embed_batch_ms": 1134.75
+      },
+      "unanswerable": {
+        "n": 15,
+        "with_hits": 15,
+        "top_score_mean": 0.0318,
+        "top_score_max": 0.0328
+      },
+      "by_doc": {
+        "qatar-domestic-workers-law-15-2017": {
+          "n": 19,
+          "recall@10": 0.7895
+        },
+        "qatar-heat-stress-decision-17-2021": {
+          "n": 9,
+          "recall@10": 0.8889
+        },
+        "qatar-labour-dispute-committees-decision-6-2018": {
+          "n": 10,
+          "recall@10": 0.8
+        },
+        "qatar-labour-law-14-2004": {
+          "n": 224,
+          "recall@10": 0.942
+        },
+        "qatar-minimum-wage-law-17-2020": {
+          "n": 6,
+          "recall@10": 0.75
+        }
+      }
+    },
+    {
+      "model": "e5",
+      "config": "hybrid",
+      "split": "msa",
+      "n_pairs": 229,
+      "n": 218,
+      "recall@3": 0.4771,
+      "recall@10": 0.9335,
+      "mrr": 0.4701,
+      "hit@3": 0.5138,
+      "hit@10": 0.9587,
+      "latency": {
+        "mean_ms": 4.14,
+        "p95_ms": 5.82,
+        "embed_batch_ms": 957.01
+      },
+      "unanswerable": {
+        "n": 11,
+        "with_hits": 11,
+        "top_score_mean": 0.0319,
+        "top_score_max": 0.0328
+      },
+      "by_doc": {
+        "qatar-domestic-workers-law-15-2017": {
+          "n": 15,
+          "recall@10": 0.8
+        },
+        "qatar-heat-stress-decision-17-2021": {
+          "n": 6,
+          "recall@10": 0.8333
+        },
+        "qatar-labour-dispute-committees-decision-6-2018": {
+          "n": 10,
+          "recall@10": 0.8
+        },
+        "qatar-labour-law-14-2004": {
+          "n": 182,
+          "recall@10": 0.9615
+        },
+        "qatar-minimum-wage-law-17-2020": {
+          "n": 5,
+          "recall@10": 0.7
+        }
+      }
+    },
+    {
+      "model": "e5",
+      "config": "hybrid",
+      "split": "gulf",
+      "n_pairs": 54,
+      "n": 50,
+      "recall@3": 0.61,
+      "recall@10": 0.86,
+      "mrr": 0.4886,
+      "hit@3": 0.64,
+      "hit@10": 0.88,
+      "latency": {
+        "mean_ms": 4.45,
+        "p95_ms": 7.11,
+        "embed_batch_ms": 250.84
+      },
+      "unanswerable": {
+        "n": 4,
+        "with_hits": 4,
+        "top_score_mean": 0.0313,
+        "top_score_max": 0.0315
+      },
+      "by_doc": {
+        "qatar-domestic-workers-law-15-2017": {
+          "n": 4,
+          "recall@10": 0.75
+        },
+        "qatar-heat-stress-decision-17-2021": {
+          "n": 3,
+          "recall@10": 1.0
+        },
+        "qatar-labour-law-14-2004": {
+          "n": 42,
+          "recall@10": 0.8571
+        },
+        "qatar-minimum-wage-law-17-2020": {
+          "n": 1,
+          "recall@10": 1.0
+        }
+      }
+    },
+    {
+      "model": "e5",
+      "config": "hybrid",
+      "split": "msa_matched",
+      "n_pairs": 68,
+      "n": 68,
+      "recall@3": 0.5441,
+      "recall@10": 0.9559,
+      "mrr": 0.5238,
+      "hit@3": 0.5588,
+      "hit@10": 0.9706,
+      "latency": {
+        "mean_ms": 4.97,
+        "p95_ms": 7.1,
+        "embed_batch_ms": 286.64
+      },
+      "unanswerable": {
+        "n": 0,
+        "with_hits": 0,
+        "top_score_mean": 0.0,
+        "top_score_max": 0.0
+      },
+      "by_doc": {
+        "qatar-domestic-workers-law-15-2017": {
+          "n": 6,
+          "recall@10": 0.6667
+        },
+        "qatar-heat-stress-decision-17-2021": {
+          "n": 4,
+          "recall@10": 1.0
+        },
+        "qatar-labour-law-14-2004": {
+          "n": 57,
+          "recall@10": 0.9825
+        },
+        "qatar-minimum-wage-law-17-2020": {
+          "n": 1,
+          "recall@10": 1.0
+        }
+      }
+    },
+    {
+      "model": "e5",
+      "config": "hybrid+rerank",
+      "split": "all",
+      "n_pairs": 283,
+      "n": 268,
+      "recall@3": 0.9104,
+      "recall@10": 0.9534,
+      "mrr": 0.8812,
+      "hit@3": 0.944,
+      "hit@10": 0.9701,
+      "latency": {
+        "mean_ms": 985.04,
+        "p95_ms": 1030.87,
+        "embed_batch_ms": 1134.84
+      },
+      "unanswerable": {
+        "n": 15,
+        "with_hits": 15,
+        "top_score_mean": 0.3208,
+        "top_score_max": 0.9547
+      },
+      "by_doc": {
+        "qatar-domestic-workers-law-15-2017": {
+          "n": 19,
+          "recall@10": 0.8947
+        },
+        "qatar-heat-stress-decision-17-2021": {
+          "n": 9,
+          "recall@10": 0.8889
+        },
+        "qatar-labour-dispute-committees-decision-6-2018": {
+          "n": 10,
+          "recall@10": 0.9
+        },
+        "qatar-labour-law-14-2004": {
+          "n": 224,
+          "recall@10": 0.9665
+        },
+        "qatar-minimum-wage-law-17-2020": {
+          "n": 6,
+          "recall@10": 0.8333
+        }
+      }
+    },
+    {
+      "model": "e5",
+      "config": "hybrid+rerank",
+      "split": "msa",
+      "n_pairs": 229,
+      "n": 218,
+      "recall@3": 0.922,
+      "recall@10": 0.9656,
+      "mrr": 0.9032,
+      "hit@3": 0.9541,
+      "hit@10": 0.9817,
+      "latency": {
+        "mean_ms": 978.77,
+        "p95_ms": 1035.85,
+        "embed_batch_ms": 996.0
+      },
+      "unanswerable": {
+        "n": 11,
+        "with_hits": 11,
+        "top_score_mean": 0.3808,
+        "top_score_max": 0.9547
+      },
+      "by_doc": {
+        "qatar-domestic-workers-law-15-2017": {
+          "n": 15,
+          "recall@10": 0.9333
+        },
+        "qatar-heat-stress-decision-17-2021": {
+          "n": 6,
+          "recall@10": 0.8333
+        },
+        "qatar-labour-dispute-committees-decision-6-2018": {
+          "n": 10,
+          "recall@10": 0.9
+        },
+        "qatar-labour-law-14-2004": {
+          "n": 182,
+          "recall@10": 0.9808
+        },
+        "qatar-minimum-wage-law-17-2020": {
+          "n": 5,
+          "recall@10": 0.8
+        }
+      }
+    },
+    {
+      "model": "e5",
+      "config": "hybrid+rerank",
+      "split": "gulf",
+      "n_pairs": 54,
+      "n": 50,
+      "recall@3": 0.86,
+      "recall@10": 0.9,
+      "mrr": 0.785,
+      "hit@3": 0.9,
+      "hit@10": 0.92,
+      "latency": {
+        "mean_ms": 982.18,
+        "p95_ms": 1036.32,
+        "embed_batch_ms": 289.45
+      },
+      "unanswerable": {
+        "n": 4,
+        "with_hits": 4,
+        "top_score_mean": 0.1558,
+        "top_score_max": 0.5188
+      },
+      "by_doc": {
+        "qatar-domestic-workers-law-15-2017": {
+          "n": 4,
+          "recall@10": 0.75
+        },
+        "qatar-heat-stress-decision-17-2021": {
+          "n": 3,
+          "recall@10": 1.0
+        },
+        "qatar-labour-law-14-2004": {
+          "n": 42,
+          "recall@10": 0.9048
+        },
+        "qatar-minimum-wage-law-17-2020": {
+          "n": 1,
+          "recall@10": 1.0
+        }
+      }
+    },
+    {
+      "model": "e5",
+      "config": "hybrid+rerank",
+      "split": "msa_matched",
+      "n_pairs": 68,
+      "n": 68,
+      "recall@3": 0.9265,
+      "recall@10": 0.9926,
+      "mrr": 0.9147,
+      "hit@3": 0.9559,
+      "hit@10": 1.0,
+      "latency": {
+        "mean_ms": 986.07,
+        "p95_ms": 1043.98,
+        "embed_batch_ms": 323.93
+      },
+      "unanswerable": {
+        "n": 0,
+        "with_hits": 0,
+        "top_score_mean": 0.0,
+        "top_score_max": 0.0
+      },
+      "by_doc": {
+        "qatar-domestic-workers-law-15-2017": {
+          "n": 6,
+          "recall@10": 1.0
+        },
+        "qatar-heat-stress-decision-17-2021": {
+          "n": 4,
+          "recall@10": 1.0
+        },
+        "qatar-labour-law-14-2004": {
+          "n": 57,
+          "recall@10": 0.9912
+        },
+        "qatar-minimum-wage-law-17-2020": {
+          "n": 1,
+          "recall@10": 1.0
+        }
+      }
+    },
+    {
+      "model": "bge",
+      "config": "dense",
+      "split": "all",
+      "n_pairs": 283,
+      "n": 268,
+      "recall@3": 0.8638,
+      "recall@10": 0.9459,
+      "mrr": 0.8285,
+      "hit@3": 0.8993,
+      "hit@10": 0.9627,
+      "latency": {
+        "mean_ms": 2.59,
+        "p95_ms": 3.86,
+        "embed_batch_ms": 3975.05
+      },
+      "unanswerable": {
+        "n": 15,
+        "with_hits": 15,
+        "top_score_mean": 0.6081,
+        "top_score_max": 0.6759
+      },
+      "by_doc": {
+        "qatar-domestic-workers-law-15-2017": {
+          "n": 19,
+          "recall@10": 0.9474
+        },
+        "qatar-heat-stress-decision-17-2021": {
+          "n": 9,
+          "recall@10": 0.8333
+        },
+        "qatar-labour-dispute-committees-decision-6-2018": {
+          "n": 10,
+          "recall@10": 1.0
+        },
+        "qatar-labour-law-14-2004": {
+          "n": 224,
+          "recall@10": 0.9509
+        },
+        "qatar-minimum-wage-law-17-2020": {
+          "n": 6,
+          "recall@10": 0.8333
+        }
+      }
+    },
+    {
+      "model": "bge",
+      "config": "dense",
+      "split": "msa",
+      "n_pairs": 229,
+      "n": 218,
+      "recall@3": 0.8807,
+      "recall@10": 0.9495,
+      "mrr": 0.8477,
+      "hit@3": 0.9174,
+      "hit@10": 0.9633,
+      "latency": {
+        "mean_ms": 2.48,
+        "p95_ms": 3.38,
+        "embed_batch_ms": 920.03
+      },
+      "unanswerable": {
+        "n": 11,
+        "with_hits": 11,
+        "top_score_mean": 0.6119,
+        "top_score_max": 0.6759
+      },
+      "by_doc": {
+        "qatar-domestic-workers-law-15-2017": {
+          "n": 15,
+          "recall@10": 1.0
+        },
+        "qatar-heat-stress-decision-17-2021": {
+          "n": 6,
+          "recall@10": 0.8333
+        },
+        "qatar-labour-dispute-committees-decision-6-2018": {
+          "n": 10,
+          "recall@10": 1.0
+        },
+        "qatar-labour-law-14-2004": {
+          "n": 182,
+          "recall@10": 0.9505
+        },
+        "qatar-minimum-wage-law-17-2020": {
+          "n": 5,
+          "recall@10": 0.8
+        }
+      }
+    },
+    {
+      "model": "bge",
+      "config": "dense",
+      "split": "gulf",
+      "n_pairs": 54,
+      "n": 50,
+      "recall@3": 0.79,
+      "recall@10": 0.93,
+      "mrr": 0.7444,
+      "hit@3": 0.82,
+      "hit@10": 0.96,
+      "latency": {
+        "mean_ms": 2.0,
+        "p95_ms": 3.74,
+        "embed_batch_ms": 243.35
+      },
+      "unanswerable": {
+        "n": 4,
+        "with_hits": 4,
+        "top_score_mean": 0.5977,
+        "top_score_max": 0.617
+      },
+      "by_doc": {
+        "qatar-domestic-workers-law-15-2017": {
+          "n": 4,
+          "recall@10": 0.75
+        },
+        "qatar-heat-stress-decision-17-2021": {
+          "n": 3,
+          "recall@10": 0.8333
+        },
+        "qatar-labour-law-14-2004": {
+          "n": 42,
+          "recall@10": 0.9524
+        },
+        "qatar-minimum-wage-law-17-2020": {
+          "n": 1,
+          "recall@10": 1.0
+        }
+      }
+    },
+    {
+      "model": "bge",
+      "config": "dense",
+      "split": "msa_matched",
+      "n_pairs": 68,
+      "n": 68,
+      "recall@3": 0.8235,
+      "recall@10": 0.9338,
+      "mrr": 0.803,
+      "hit@3": 0.8529,
+      "hit@10": 0.9412,
+      "latency": {
+        "mean_ms": 1.41,
+        "p95_ms": 2.06,
+        "embed_batch_ms": 333.12
+      },
+      "unanswerable": {
+        "n": 0,
+        "with_hits": 0,
+        "top_score_mean": 0.0,
+        "top_score_max": 0.0
+      },
+      "by_doc": {
+        "qatar-domestic-workers-law-15-2017": {
+          "n": 6,
+          "recall@10": 1.0
+        },
+        "qatar-heat-stress-decision-17-2021": {
+          "n": 4,
+          "recall@10": 1.0
+        },
+        "qatar-labour-law-14-2004": {
+          "n": 57,
+          "recall@10": 0.9211
+        },
+        "qatar-minimum-wage-law-17-2020": {
+          "n": 1,
+          "recall@10": 1.0
+        }
+      }
+    },
+    {
+      "model": "bge",
+      "config": "hybrid",
+      "split": "all",
+      "n_pairs": 283,
+      "n": 268,
+      "recall@3": 0.4888,
+      "recall@10": 0.9104,
+      "mrr": 0.4804,
+      "hit@3": 0.5261,
+      "hit@10": 0.9366,
+      "latency": {
+        "mean_ms": 4.04,
+        "p95_ms": 5.63,
+        "embed_batch_ms": 1060.9
+      },
+      "unanswerable": {
+        "n": 15,
+        "with_hits": 15,
+        "top_score_mean": 0.0317,
+        "top_score_max": 0.0328
+      },
+      "by_doc": {
+        "qatar-domestic-workers-law-15-2017": {
+          "n": 19,
+          "recall@10": 0.7105
+        },
+        "qatar-heat-stress-decision-17-2021": {
+          "n": 9,
+          "recall@10": 0.6667
+        },
+        "qatar-labour-dispute-committees-decision-6-2018": {
+          "n": 10,
+          "recall@10": 0.9
+        },
+        "qatar-labour-law-14-2004": {
+          "n": 224,
+          "recall@10": 0.9397
+        },
+        "qatar-minimum-wage-law-17-2020": {
+          "n": 6,
+          "recall@10": 0.8333
+        }
+      }
+    },
+    {
+      "model": "bge",
+      "config": "hybrid",
+      "split": "msa",
+      "n_pairs": 229,
+      "n": 218,
+      "recall@3": 0.4908,
+      "recall@10": 0.9197,
+      "mrr": 0.4837,
+      "hit@3": 0.5321,
+      "hit@10": 0.945,
+      "latency": {
+        "mean_ms": 4.36,
+        "p95_ms": 5.97,
+        "embed_batch_ms": 913.63
+      },
+      "unanswerable": {
+        "n": 11,
+        "with_hits": 11,
+        "top_score_mean": 0.0319,
+        "top_score_max": 0.0328
+      },
+      "by_doc": {
+        "qatar-domestic-workers-law-15-2017": {
+          "n": 15,
+          "recall@10": 0.7667
+        },
+        "qatar-heat-stress-decision-17-2021": {
+          "n": 6,
+          "recall@10": 0.5833
+        },
+        "qatar-labour-dispute-committees-decision-6-2018": {
+          "n": 10,
+          "recall@10": 0.9
+        },
+        "qatar-labour-law-14-2004": {
+          "n": 182,
+          "recall@10": 0.9478
+        },
+        "qatar-minimum-wage-law-17-2020": {
+          "n": 5,
+          "recall@10": 0.8
+        }
+      }
+    },
+    {
+      "model": "bge",
+      "config": "hybrid",
+      "split": "gulf",
+      "n_pairs": 54,
+      "n": 50,
+      "recall@3": 0.48,
+      "recall@10": 0.87,
+      "mrr": 0.4664,
+      "hit@3": 0.5,
+      "hit@10": 0.9,
+      "latency": {
+        "mean_ms": 4.33,
+        "p95_ms": 6.52,
+        "embed_batch_ms": 314.76
+      },
+      "unanswerable": {
+        "n": 4,
+        "with_hits": 4,
+        "top_score_mean": 0.0313,
+        "top_score_max": 0.0318
+      },
+      "by_doc": {
+        "qatar-domestic-workers-law-15-2017": {
+          "n": 4,
+          "recall@10": 0.5
+        },
+        "qatar-heat-stress-decision-17-2021": {
+          "n": 3,
+          "recall@10": 0.8333
+        },
+        "qatar-labour-law-14-2004": {
+          "n": 42,
+          "recall@10": 0.9048
+        },
+        "qatar-minimum-wage-law-17-2020": {
+          "n": 1,
+          "recall@10": 1.0
+        }
+      }
+    },
+    {
+      "model": "bge",
+      "config": "hybrid",
+      "split": "msa_matched",
+      "n_pairs": 68,
+      "n": 68,
+      "recall@3": 0.5368,
+      "recall@10": 0.9191,
+      "mrr": 0.5276,
+      "hit@3": 0.5588,
+      "hit@10": 0.9412,
+      "latency": {
+        "mean_ms": 4.76,
+        "p95_ms": 6.94,
+        "embed_batch_ms": 278.25
+      },
+      "unanswerable": {
+        "n": 0,
+        "with_hits": 0,
+        "top_score_mean": 0.0,
+        "top_score_max": 0.0
+      },
+      "by_doc": {
+        "qatar-domestic-workers-law-15-2017": {
+          "n": 6,
+          "recall@10": 0.8333
+        },
+        "qatar-heat-stress-decision-17-2021": {
+          "n": 4,
+          "recall@10": 0.875
+        },
+        "qatar-labour-law-14-2004": {
+          "n": 57,
+          "recall@10": 0.9298
+        },
+        "qatar-minimum-wage-law-17-2020": {
+          "n": 1,
+          "recall@10": 1.0
+        }
+      }
+    },
+    {
+      "model": "bge",
+      "config": "hybrid+rerank",
+      "split": "all",
+      "n_pairs": 283,
+      "n": 268,
+      "recall@3": 0.9216,
+      "recall@10": 0.9646,
+      "mrr": 0.8826,
+      "hit@3": 0.9515,
+      "hit@10": 0.9813,
+      "latency": {
+        "mean_ms": 973.54,
+        "p95_ms": 1031.28,
+        "embed_batch_ms": 1057.84
+      },
+      "unanswerable": {
+        "n": 15,
+        "with_hits": 15,
+        "top_score_mean": 0.3208,
+        "top_score_max": 0.9547
+      },
+      "by_doc": {
+        "qatar-domestic-workers-law-15-2017": {
+          "n": 19,
+          "recall@10": 0.9474
+        },
+        "qatar-heat-stress-decision-17-2021": {
+          "n": 9,
+          "recall@10": 0.8333
+        },
+        "qatar-labour-dispute-committees-decision-6-2018": {
+          "n": 10,
+          "recall@10": 1.0
+        },
+        "qatar-labour-law-14-2004": {
+          "n": 224,
+          "recall@10": 0.9732
+        },
+        "qatar-minimum-wage-law-17-2020": {
+          "n": 6,
+          "recall@10": 0.8333
+        }
+      }
+    },
+    {
+      "model": "bge",
+      "config": "hybrid+rerank",
+      "split": "msa",
+      "n_pairs": 229,
+      "n": 218,
+      "recall@3": 0.9243,
+      "recall@10": 0.9702,
+      "mrr": 0.9029,
+      "hit@3": 0.9541,
+      "hit@10": 0.9817,
+      "latency": {
+        "mean_ms": 978.23,
+        "p95_ms": 1031.79,
+        "embed_batch_ms": 924.79
+      },
+      "unanswerable": {
+        "n": 11,
+        "with_hits": 11,
+        "top_score_mean": 0.3808,
+        "top_score_max": 0.9547
+      },
+      "by_doc": {
+        "qatar-domestic-workers-law-15-2017": {
+          "n": 15,
+          "recall@10": 1.0
+        },
+        "qatar-heat-stress-decision-17-2021": {
+          "n": 6,
+          "recall@10": 0.8333
+        },
+        "qatar-labour-dispute-committees-decision-6-2018": {
+          "n": 10,
+          "recall@10": 1.0
+        },
+        "qatar-labour-law-14-2004": {
+          "n": 182,
+          "recall@10": 0.9753
+        },
+        "qatar-minimum-wage-law-17-2020": {
+          "n": 5,
+          "recall@10": 0.8
+        }
+      }
+    },
+    {
+      "model": "bge",
+      "config": "hybrid+rerank",
+      "split": "gulf",
+      "n_pairs": 54,
+      "n": 50,
+      "recall@3": 0.91,
+      "recall@10": 0.94,
+      "mrr": 0.7942,
+      "hit@3": 0.94,
+      "hit@10": 0.98,
+      "latency": {
+        "mean_ms": 987.65,
+        "p95_ms": 1050.54,
+        "embed_batch_ms": 256.52
+      },
+      "unanswerable": {
+        "n": 4,
+        "with_hits": 4,
+        "top_score_mean": 0.1558,
+        "top_score_max": 0.5188
+      },
+      "by_doc": {
+        "qatar-domestic-workers-law-15-2017": {
+          "n": 4,
+          "recall@10": 0.75
+        },
+        "qatar-heat-stress-decision-17-2021": {
+          "n": 3,
+          "recall@10": 0.8333
+        },
+        "qatar-labour-law-14-2004": {
+          "n": 42,
+          "recall@10": 0.9643
+        },
+        "qatar-minimum-wage-law-17-2020": {
+          "n": 1,
+          "recall@10": 1.0
+        }
+      }
+    },
+    {
+      "model": "bge",
+      "config": "hybrid+rerank",
+      "split": "msa_matched",
+      "n_pairs": 68,
+      "n": 68,
+      "recall@3": 0.9118,
+      "recall@10": 0.9779,
+      "mrr": 0.9007,
+      "hit@3": 0.9412,
+      "hit@10": 0.9853,
+      "latency": {
+        "mean_ms": 977.97,
+        "p95_ms": 1021.52,
+        "embed_batch_ms": 305.29
+      },
+      "unanswerable": {
+        "n": 0,
+        "with_hits": 0,
+        "top_score_mean": 0.0,
+        "top_score_max": 0.0
+      },
+      "by_doc": {
+        "qatar-domestic-workers-law-15-2017": {
+          "n": 6,
+          "recall@10": 1.0
+        },
+        "qatar-heat-stress-decision-17-2021": {
+          "n": 4,
+          "recall@10": 1.0
+        },
+        "qatar-labour-law-14-2004": {
+          "n": 57,
+          "recall@10": 0.9737
+        },
+        "qatar-minimum-wage-law-17-2020": {
+          "n": 1,
+          "recall@10": 1.0
+        }
+      }
+    }
+  ]
+}

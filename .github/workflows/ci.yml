@@ -4,10 +4,24 @@ on:
   push:
     branches: [main]
   pull_request:
+  # The dense gate downloads a ~2.2 GB model, so it runs nightly and on demand.
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      model:
+        description: "embedding model key for the dense gate"
+        default: e5
+        type: choice
+        options: [e5, bge]
+
+env:
+  PG_IMAGE: pgvector/pgvector:pg17
 
 jobs:
   ci:
     runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
 
     # Without this the DB-backed tests skip themselves and CI goes green on
     # roughly half the suite. Same image as docker-compose.
@@ -44,3 +58,126 @@ jobs:
 
       - name: Audit dependencies
         run: pip-audit -r requirements.txt
+
+  # ---------------------------------------------------------------------------
+  # Retrieval regression gate.
+  #
+  # TRADE-OFF (option (a) of the two we considered):
+  #   Every PR gates the LEXICAL config, which needs no embedding model — the job
+  #   installs requirements-dev.txt only, ingests the committed corpus, and
+  #   compares recall@10 against evals/baseline.json. That catches regressions in
+  #   Arabic normalization, article-boundary chunking, chunk ids, the generated
+  #   tsvector and the FTS query — which is where silent breakage actually lives,
+  #   because every one of those is shared with the dense path.
+  #   It does NOT catch an embedding or fusion regression.
+  #
+  #   The rejected option (b) was caching multilingual-e5-large in actions/cache
+  #   and running the dense gate on every PR. Rejected because a ~2.2 GB restore
+  #   (plus a ~2 GB torch install) on every push buys one extra failure mode at
+  #   several minutes per run; the dense-only surface is small and changes rarely.
+  #   Instead the dense gate runs nightly and on workflow_dispatch, so it is at
+  #   most one day between an embedding regression landing and CI saying so.
+  #
+  # Both jobs must be able to FAIL: they ingest a real corpus and re-run the
+  # harness. If ingestion produces zero chunks the gate reports recall@10 0.0000
+  # and exits 1 rather than reporting a vacuous pass.
+  # ---------------------------------------------------------------------------
+  eval-gate-lexical:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+
+    services:
+      db:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: rag_user
+          POSTGRES_PASSWORD: rag_pass
+          POSTGRES_DB: rag_db
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U rag_user -d rag_db"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql+asyncpg://rag_user:rag_pass@localhost:5433/rag_db
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements-dev.txt
+
+      - name: Migrate
+        run: alembic upgrade head
+
+      - name: Ingest the committed corpus
+        run: python -m ingestion ingest
+
+      - name: Corpus sanity check
+        run: python -m ingestion stats
+
+      - name: Gate — lexical recall@10 vs evals/baseline.json
+        run: python -m evals.gate --config lexical
+
+  eval-gate-dense:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+
+    services:
+      db:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: rag_user
+          POSTGRES_PASSWORD: rag_pass
+          POSTGRES_DB: rag_db
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U rag_user -d rag_db"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql+asyncpg://rag_user:rag_pass@localhost:5433/rag_db
+      MODEL_KEY: ${{ inputs.model || 'e5' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      # The default linux torch wheel is the CUDA build (~2.5 GB) and this runner
+      # has no GPU, so pin the CPU index first and let requirements-models.txt
+      # resolve against the wheel already installed.
+      - run: pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - run: pip install -r requirements-dev.txt -r requirements-models.txt
+
+      # Weights are immutable per model id, so the key never needs to change.
+      - name: Cache HuggingFace weights
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-${{ runner.os }}-${{ env.MODEL_KEY }}
+
+      - name: Migrate
+        run: alembic upgrade head
+
+      - name: Ingest the committed corpus
+        run: python -m ingestion ingest
+
+      - name: Backfill embeddings
+        run: python -m ingestion backfill --model "$MODEL_KEY"
+
+      - name: Gate — dense recall@10 vs evals/baseline.json
+        run: python -m evals.gate --config dense --model "$MODEL_KEY"

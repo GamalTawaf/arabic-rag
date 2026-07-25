@@ -1,8 +1,9 @@
 """CLI for the ingestion pipeline — the whole corpus in one command.
 
-    python -m ingestion fetch     # re-download the corpus from its public sources
-    python -m ingestion ingest    # committed corpus -> chunks table
-    python -m ingestion stats     # rows per document, embedding coverage
+    python -m ingestion fetch                 # re-download the corpus from its sources
+    python -m ingestion ingest                # committed corpus -> chunks table
+    python -m ingestion backfill --model e5   # fill one model's vector column
+    python -m ingestion stats                 # rows per document, embedding coverage
 
 The database comes from settings.database_url (env: DATABASE_URL).
 """
@@ -23,6 +24,7 @@ from sqlalchemy.exc import ArgumentError, SQLAlchemyError
 from app.config import settings
 from app.db import SessionLocal, engine
 from app.models.chunks import EMBEDDING_COLUMNS, Chunk
+from ingestion.backfill import DEFAULT_BATCH_SIZE, backfill_embeddings
 from ingestion.fetch import (
     DEFAULT_CORPUS_DIR,
     CorpusDoc,
@@ -63,6 +65,11 @@ def _run(coro: Awaitable[T]) -> int:
         print(f"database error against {_safe_url()}: {hint}", file=sys.stderr)
         print(f"  {type(exc).__name__}: {message.splitlines()[0]}", file=sys.stderr)
         return 1
+    except ValueError as exc:
+        # Unknown model key, missing API key, wrong embedding dimension: the
+        # message already says what to do, so print it without a traceback.
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
     return 0
 
 
@@ -72,6 +79,17 @@ async def _ingest(docs: list[CorpusDoc]) -> None:
     print(
         f"ingested {stats.documents} documents -> {stats.chunks_written} chunks "
         f"({stats.chunks_skipped} skipped) into {_safe_url()}"
+    )
+
+
+async def _backfill(model_key: str, batch_size: int, only_missing: bool) -> None:
+    async with SessionLocal() as session:
+        stats = await backfill_embeddings(
+            session, model_key, batch_size=batch_size, only_missing=only_missing
+        )
+    print(
+        f"backfilled {stats.model_key}: {stats.chunks_embedded} chunks embedded "
+        f"({stats.chunks_skipped} already had a vector) in {stats.seconds:.1f}s"
     )
 
 
@@ -122,11 +140,22 @@ def main(argv: list[str] | None = None) -> int:
     for name, help_text in (
         ("fetch", "re-download the corpus from its public sources"),
         ("ingest", "load the committed corpus into the chunks table"),
+        ("backfill", "embed the chunks into one model's vector column"),
         ("stats", "row counts per document and embedding coverage"),
     ):
         subparser = subparsers.add_parser(name, help=help_text)
-        if name != "stats":
+        if name in ("fetch", "ingest"):
             subparser.add_argument("--corpus", type=Path, default=DEFAULT_CORPUS_DIR)
+        if name == "backfill":
+            subparser.add_argument(
+                "--model", required=True, choices=sorted(EMBEDDING_COLUMNS), help="model key"
+            )
+            subparser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE)
+            subparser.add_argument(
+                "--all",
+                action="store_true",
+                help="re-embed every chunk (default: only rows whose column is NULL)",
+            )
 
     args = parser.parse_args(argv)
     if args.command == "fetch":
@@ -138,6 +167,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"corpus error: {exc}", file=sys.stderr)
             return 1
         return _run(_ingest(docs))
+    if args.command == "backfill":
+        return _run(_backfill(args.model, args.batch_size, only_missing=not args.all))
     return _run(_stats())
 
 
