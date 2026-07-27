@@ -7,7 +7,7 @@ difference costs.
 
 All four phases are built — corpus and ingestion, eval dataset and benchmark,
 the `/ask` service with planning/generation/tracing/caching/spend-cap, and a
-Terraform stack for Cloud Run + Cloud SQL + Pub/Sub. 542 tests, a CI regression
+Terraform stack for Cloud Run + Cloud SQL + Pub/Sub. 576 tests, a CI regression
 gate on every PR, a nightly dense gate and latency replay.
 
 **Two things have never run, and every claim below is written around that.**
@@ -69,7 +69,7 @@ query-log numbers.
 ## What query planning recovers
 
 Phase 3's ablation, and the direct answer to the headline above. A hand-written
-~30-entry Gulf→MSA lexicon (no model, no API key) rewrote 49 of the 50 Gulf
+77-entry Gulf→MSA lexicon (no model, no API key) rewrote 49 of the 50 Gulf
 questions. Dense retrieval, **10 candidates per leg**:
 
 | arm | e5 recall@3 | e5 recall@10 | e5 MRR | bge recall@3 | bge recall@10 | bge MRR |
@@ -111,8 +111,8 @@ pairs, that floor was:
   and all 39 had the correct article *already retrieved into the context window*,
   30 of them at position one;
 - refusing **54% of Gulf questions against 5.5% of MSA ones** — the same
-  questions with the same correct answers, a 10x disparity that persists at every
-  threshold that catches anything;
+  questions with the same correct answers, a 4–39x disparity that persists at
+  every threshold that catches anything;
 - unable to clear both a 10% false-refusal cap and a 50% refusal-precision floor
   at *any* value in a 0.00–0.90 sweep. Peak refusal precision is 0.171.
 
@@ -159,7 +159,7 @@ uvicorn app.main:app --port 8000
 `docker compose up -d db` creates **two** databases: `rag_db` for development and
 `rag_test` for the suite, via `docker/init-rag-test-db.sql`. That file only runs
 on an empty data volume, so if you already had this container before that file
-existed, create it once by hand — otherwise 153 tests skip themselves and
+existed, create it once by hand — otherwise 167 tests skip themselves and
 `pytest` still exits 0:
 
 ```bash
@@ -277,9 +277,9 @@ python -m benchmark.replay --n 30            # the latency-budget gate
 Tests and lint:
 
 ```bash
-pytest            # 541 pass, 1 skipped (it loads the 2 GB reranker; set
+pytest            # 575 pass, 1 skipped (it loads the 2 GB reranker; set
                   # RERANK_REAL_MODEL=1 to run it). Needs the rag_test database
-                  # above — without it 153 more tests skip and pytest still
+                  # above — without it 167 more tests skip and pytest still
                   # exits 0.
 ruff check .
 ```
@@ -462,7 +462,8 @@ app/
   models/chunks.py    one table: text, normalized text, generated tsvector,
                       one nullable vector column per benchmarked model
   models/query_cache.py  the semantic cache, same pgvector table family
-  planning/           dialect.py (Gulf→MSA lexicon), planner.py (noop/rules/llm)
+  planning/           lexicon.py (77-entry Gulf→MSA table), dialect.py (the
+                      rewriter over it), planner.py (noop/rules/llm)
   retrieval/          embed.py (4 models, 1 interface), search.py (dense /
                       lexical / RRF hybrid), rerank.py (bge cross-encoder),
                       cache.py (semantic cache with digit/negation guards)
@@ -520,6 +521,35 @@ Accurate as of the current commit.
   `app/observability/tracing.py` exports OTLP/gRPC and that exporter cannot
   attach Google credentials. `otel_exporter_otlp_endpoint` defaults to `""` for
   that reason and terraform/README.md explains what would close the gap.
+
+### Security posture: demo-grade on purpose
+
+The controls that exist are real but deliberately small, and every one of them
+has a stated ceiling. Read this before pointing anything that matters at it.
+
+| Surface | What is there | The ceiling |
+|---|---|---|
+| `POST /ingest` | Optional `x-api-key` (`INGEST_API_KEY`), constant-time compare. Terraform generates a 32-char key into Secret Manager (`terraform/secrets.tf`) and the service reads it by reference, so a deployed instance is never open — read it with `terraform output -raw ingest_api_key`. | One static key, no rotation, no per-caller identity. **Still unset by default for a local clone**, where the route runs open against your laptop's Postgres. |
+| `POST /ingest/pubsub` | OIDC at the infrastructure layer, dedicated service account (`terraform/pubsub.tf`) | The stronger of the two, and the model `/ingest` should eventually move to. |
+| `POST /ask` | Sliding-window rate limit per client IP (`ASK_RATE_LIMIT_PER_MINUTE`; app default 60, Terraform deploys **10**; 0 disables). Locked for the threadpool, and swept so one-shot addresses cannot grow the table. Both images run uvicorn with `--proxy-headers`, so the key is the caller and not Cloud Run's front end. | **No authentication, deliberately** — the demo URL is meant to open in a browser. In-process: the real budget is the limit × instance count, and it resets on deploy or scale — the same known limitation the daily spend cap carries. An IP is not an identity, and a NAT or shared egress shares one bucket. What actually bounds abuse is the dollar cap below, not this. Cloud Armor, a Turnstile check, or gateway quotas are the upgrade path. |
+| `GET /stats`, `GET /metrics` | Nothing — both are public | `/stats` reports which provider keys are missing and how much of the daily cap is spent; `/metrics` is the raw Prometheus surface. Left open **on purpose**: they are the point of the demo, and the information they leak is operational, not secret. On a real deployment both belong behind IAM or an internal-only ingress. |
+| Container | Both images run as a non-root `appuser` | Nothing runs as root, but there is no read-only root filesystem and no seccomp profile beyond the platform default. |
+| Dependencies | Every direct dependency pinned with `==`; `pip-audit` runs in CI | No hashes and no transitive lock, so a resolver can still move a sub-dependency. |
+| Daily spend cap | `DAILY_SPEND_CAP_USD`, reserved before the provider call and settled against the real cost after it, so concurrent requests cannot all pass one cap. App default 5.0; Terraform deploys **1.0** against `max_instances = 2`, so an open `/ask` costs at most **~$2/day** of generation. | Per-process and in-memory: the effective cap is the cap × instance count, and a restart forgets the day. Redis `INCR` is the upgrade path. |
+
+Not implemented at all, and not pretended otherwise: user authentication,
+per-tenant isolation, audit logging, and secret rotation. There are no users.
+
+`/ask` is open on purpose, so the answer to abuse is the off switch rather than a
+login wall. The fastest one does not involve Terraform:
+
+```bash
+gcloud run services update arabic-rag --region <region> --max-instances=0
+```
+
+Instances drain, every request 503s, and the stack costs what an idle Cloud SQL
+instance costs. `terraform apply -var allow_unauthenticated=false` is the durable
+version, and `terraform destroy` is the one the ephemerality note argues for.
 
 Also known and not fixed: the Postgres FTS index uses the `simple` config because
 Postgres ships no Arabic stemmer, which is most of why lexical retrieval scores

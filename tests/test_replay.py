@@ -78,18 +78,25 @@ def test_percentile_of_an_empty_sample_is_zero_not_an_error():
 
 def test_summarise_attaches_each_stage_its_allocation_and_keeps_budget_order():
     # Arrange — deliberately out of order
-    samples = {"rerank": [900.0], "plan": [0.1], "total": [950.0]}
+    samples = in_budget(rerank=[900.0], plan=[0.1], total=[950.0])
 
     # Act
     stats = summarise(samples)
 
+    # Assert — BUDGET order, then total last
+    assert [stage.name for stage in stats] == [*BUDGET, "total"]
+    assert [stage.budget for stage in stats] == [*BUDGET.values(), TOTAL_BUDGET_MS]
+
+
+def test_summarise_lists_every_budgeted_stage_even_with_no_samples():
+    """An omitted stage is an unverified allocation the gate cannot see."""
+    # Act
+    stats = summarise({"plan": [0.1]})
+
     # Assert
-    assert [stage.name for stage in stats] == ["plan", "rerank", "total"]
-    assert [stage.budget for stage in stats] == [
-        BUDGET["plan"],
-        BUDGET["rerank"],
-        TOTAL_BUDGET_MS,
-    ]
+    assert [stage.name for stage in stats] == list(BUDGET)
+    silent = [stage.name for stage in stats if stage.n == 0]
+    assert silent == [name for name in BUDGET if name != "plan"]
 
 
 def test_summarise_reports_a_stage_the_budget_has_never_heard_of():
@@ -103,12 +110,26 @@ def test_summarise_reports_a_stage_the_budget_has_never_heard_of():
     assert [stage.name for stage in unbudgeted] == ["translate"]
 
 
+
+def in_budget(**overrides: list[float]) -> dict[str, list[float]]:
+    """Every budgeted stage comfortably inside its allocation, then overrides.
+
+    Tests state only the stage they are about. A partial dict is no longer a
+    passing baseline: `summarise` now reports a budgeted stage with no samples
+    as ``n=0`` and `check` fails it, because a replay that never exercised a
+    stage cannot vouch for its allocation.
+    """
+    samples = {name: [value / 2] for name, value in BUDGET.items()}
+    samples.update(overrides)
+    return samples
+
+
 # --- check -----------------------------------------------------------------
 
 
 def test_check_passes_when_every_stage_is_inside_its_allocation():
     # Arrange
-    stats = summarise({name: [value / 2] for name, value in BUDGET.items()})
+    stats = summarise(in_budget())
 
     # Act
     passed, problems = check(stats, generated=True)
@@ -120,7 +141,7 @@ def test_check_passes_when_every_stage_is_inside_its_allocation():
 
 def test_check_fails_and_names_the_stage_that_blew_its_allocation():
     # Arrange — rerank one millisecond over
-    stats = summarise({"rerank": [BUDGET["rerank"] + 1.0]})
+    stats = summarise(in_budget(rerank=[BUDGET["rerank"] + 1.0]))
 
     # Act
     passed, problems = check(stats, generated=True)
@@ -134,7 +155,7 @@ def test_check_fails_and_names_the_stage_that_blew_its_allocation():
 
 def test_check_fails_on_an_unbudgeted_stage_so_the_budget_cannot_go_stale():
     # Arrange — a stage that is fast, but that the document does not describe
-    stats = summarise({"translate": [1.0]})
+    stats = summarise(in_budget(translate=[1.0]))
 
     # Act
     passed, problems = check(stats, generated=True)
@@ -146,7 +167,7 @@ def test_check_fails_on_an_unbudgeted_stage_so_the_budget_cannot_go_stale():
 
 def test_check_does_not_gate_the_total_when_generation_did_not_run():
     # Arrange — a "total" far over 3.5 s, but generation never happened
-    stats = summarise({"total": [TOTAL_BUDGET_MS * 3]})
+    stats = summarise(in_budget(total=[TOTAL_BUDGET_MS * 3]))
 
     # Act
     skipped_passed, _ = check(stats, generated=False)
@@ -163,7 +184,8 @@ def test_check_does_not_gate_the_total_when_generation_did_not_run():
 
 def test_render_says_generation_was_skipped_and_names_the_env_var():
     # Arrange
-    samples = {"plan": [0.1], "rerank": [900.0]}
+    samples = in_budget(plan=[0.1], rerank=[900.0])
+    samples.pop("generate")
     stats = summarise(samples)
 
     # Act
@@ -178,19 +200,19 @@ def test_render_says_generation_was_skipped_and_names_the_env_var():
 
 def test_render_flags_the_over_budget_stage_in_the_table():
     # Arrange
-    samples = {"rerank": [BUDGET["rerank"] + 100.0]}
+    samples = in_budget(rerank=[BUDGET["rerank"] + 100.0])
 
     # Act
     report = render(stats := summarise(samples), make_run(samples), n_questions=1, config="dense")
 
     # Assert
     assert "OVER BUDGET" in report
-    assert stats[0].over_budget
+    assert next(stage for stage in stats if stage.name == "rerank").over_budget
 
 
 def test_render_reports_the_discarded_warmup_rather_than_hiding_it():
     # Arrange / Act
-    samples = {"plan": [0.1]}
+    samples = in_budget(plan=[0.1])
     report = render(summarise(samples), make_run(samples), n_questions=1, config="dense")
 
     # Assert — the lazy model load is a real cost, just not a per-request one
@@ -236,7 +258,7 @@ def test_sample_questions_rejects_a_nonsense_n():
 def test_main_exits_non_zero_when_a_stage_is_over_budget(monkeypatch, capsys):
     # Arrange — a replay whose reranker takes twice its allocation
     async def blown(pairs, config, model_key=None):
-        return make_run({"rerank": [BUDGET["rerank"] * 2] * 5})
+        return make_run(in_budget(rerank=[BUDGET["rerank"] * 2] * 5))
 
     monkeypatch.setattr("benchmark.replay.replay", blown)
 
@@ -305,3 +327,38 @@ def test_budget_table_in_doc_matches_code():
         f"{DOC} is out of date: regenerate with "
         "`PYTHONPATH=. python -m benchmark.replay --print-budget`"
     )
+
+
+def test_check_fails_a_budgeted_stage_that_produced_no_samples():
+    """Regression: an unexercised stage was omitted, so the gate passed on it.
+
+    Not exotic — it is what the *second* run does. The semantic cache is
+    append-only with no TTL, so replaying the same sampled questions serves
+    every one from cache and `retrieve`, `fuse` and `rerank` never execute. The
+    gate went green having measured nothing.
+    """
+    # Arrange — a cached replay: planning and the cache lookup ran, nothing else
+    stats = summarise({"plan": [1.0], "cache.lookup": [3.0], "total": [10.0]})
+
+    # Act
+    passed, problems = check(stats, generated=True)
+
+    # Assert — every silent stage is named
+    assert not passed
+    named = " ".join(problems)
+    for stage in ("embed", "retrieve", "fuse", "rerank"):
+        assert stage in named, stage
+    assert "no samples" in problems[0]
+
+
+def test_a_missing_generate_stage_is_not_a_problem_without_a_provider():
+    """`generate` has no samples for the honest reason, and says so elsewhere."""
+    # Arrange
+    samples = in_budget()
+    samples.pop("generate")
+
+    # Act
+    passed, problems = check(summarise(samples), generated=False)
+
+    # Assert
+    assert passed, problems

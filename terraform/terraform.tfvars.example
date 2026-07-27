@@ -25,11 +25,22 @@ max_instances    = 2
 # Requires an image built with requirements-models.txt. See README.md.
 rerank_enabled = true
 
-# The app's own kill-switch, not a GCP budget alert.
-daily_spend_cap_usd = 5.0
+# The app's own kill-switch, not a GCP budget alert. Per-process, so the real
+# ceiling is this times max_instances: 1.0 x 2 = $2/day of generation, worst case.
+daily_spend_cap_usd = 1.0
+
+# Per-client-IP requests per minute on /ask. 10 is a human; 60 (the app default)
+# is a script. 0 disables the limiter.
+ask_rate_limit_per_minute = 10
 
 # true = the demo URL opens in a browser with no auth. Read the variable's
 # description in variables.tf before leaving this on past the demo.
+#
+# Turning it off is also the kill switch, and the fastest one does not need
+# Terraform at all:
+#
+#   gcloud run services update arabic-rag --region <region> --max-instances=0
+#
 allow_unauthenticated = true
 
 # Empty disables app-level span export. Set to an OTLP/gRPC collector

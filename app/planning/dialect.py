@@ -44,7 +44,7 @@ def _direct(key: str) -> str | None:
     if key in GULF_TO_MSA:
         return GULF_TO_MSA[key]
     if key.startswith(HAL_PREFIX) and len(key) >= HAL_MIN_LEN:
-        # ponytail: "هالمدة" → "المدة", dropping the demonstrative rather than
+        # trade-off: "هالمدة" → "المدة", dropping the demonstrative rather than
         # guessing "هذا" vs "هذه" — gender agreement needs morphology the lexicon
         # does not have, and the demonstrative carries almost no retrieval signal
         # while a wrong one carries noise. Upgrade path: camel-tools morphology,

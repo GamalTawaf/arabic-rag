@@ -1,6 +1,6 @@
-# HANDOVER — Arabic-first RAG Service (hiring-portfolio artifact)
+# ROADMAP — Arabic-first RAG Service
 
-**Updated:** 2026-07-25 · **Status:** all four phases built · **Branch:** `feat/implementation` (no remote yet)
+**Updated:** 2026-07-25 · **Status:** all four phases built
 
 ## Why this project
 
@@ -8,7 +8,7 @@ Portfolio artifact for AI-engineer roles in the GCC market. The differentiator i
 
 ## Where it stands
 
-541 tests pass, 1 skipped (opt-in real-cross-encoder test). `ruff check .` clean. The eval gate, the latency replay, and the benchmark all run green against real data.
+575 tests pass, 1 skipped (opt-in real-cross-encoder test). `ruff check .` clean. The eval gate, the latency replay, and the benchmark all run green against real data.
 
 Two things have **never** run, and every document in the repo says so: an actual LLM API call (no key on this machine), and `terraform apply` (no GCP credentials).
 
@@ -25,7 +25,7 @@ Two things have **never** run, and every document in the repo says so: an actual
 
 **The Gulf-dialect penalty is real and model-dependent.** Against an MSA-matched control (same gold chunks, same questions, only the register changes), `multilingual-e5-large` loses 9.9 points of recall@10 and 19.7 points of MRR. `BAAI/bge-m3` is nearly flat (−0.4). The damage lands on ranking, not coverage.
 
-**A ~30-line dialect lexicon recovers most of it.** Rule-based Gulf→MSA rewriting takes e5 from 0.85 to 0.92 recall@10 on the 50 Gulf pairs. The gain shrinks at retrieval depth 20 (what the service actually runs) — documented rather than glossed. n=50, so direction is more trustworthy than magnitude.
+**A 77-entry dialect lexicon recovers most of it.** Rule-based Gulf→MSA rewriting takes e5 from 0.85 to 0.92 recall@10 on the 50 Gulf pairs. The gain shrinks at retrieval depth 20 (what the service actually runs) — documented rather than glossed. n=50, so direction is more trustworthy than magnitude.
 
 **RRF hybrid hurts top-3 precision.** Fusing a strong dense leg with a weak lexical one collapses recall@3 from 0.86 to 0.49. Traced to unweighted RRF arithmetic, confirmed not a bug. The reranker repairs it; without a reranker, dense-only is the right production config.
 
@@ -76,9 +76,3 @@ Dev database is `rag_db`; tests use `rag_test` and never touch dev data.
 1. **Get one API key and spend a day on everything it unblocks.** Model abstention against the 15 unanswerable pairs (the named replacement for the refusal gate), then the `generate` stage measurement, then the LLM-judged suite and the LLMPlanner ablation. One key retires most of the gaps list.
 2. **Decide the reranker's fate on CPU.** It cannot meet its own budget without a GPU. Either re-derive the allocation from CPU numbers in its own commit, or ship `config=hybrid` at a measured cost of 1.9 points recall@10.
 3. **Implement top1-vs-top5 margin refusal.** Cheapest item on the calibration doc's list — no new model, no key — and it directly tests whether the *gap* between candidates is dialect-neutral even though the absolute score demonstrably is not.
-
-## Process notes
-
-- Ponytail mode active (lazy/minimal, `# ponytail:` comments mark deliberate ceilings).
-- User rule: never push directly to main — branch + PR. Work is on `feat/implementation`; there is no git remote yet, so a PR cannot be opened until one is added.
-- Built with multi-agent workflows; every number in every document came from a real run, and negative results were kept rather than buried.

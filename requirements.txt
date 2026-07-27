@@ -1,15 +1,22 @@
-fastapi
-uvicorn[standard]
-sqlalchemy[asyncio]
-alembic
-asyncpg
-pgvector
-pydantic-settings
-httpx
-tenacity
-anthropic
-google-genai
-opentelemetry-sdk
-opentelemetry-exporter-otlp
-opentelemetry-instrumentation-fastapi
-opentelemetry-exporter-prometheus
+# Pinned with `==` to the versions this repo was built and measured against —
+# an unpinned install is a different program from the one the benchmark numbers
+# came out of. Direct dependencies only.
+#
+# trade-off: no hashes and no transitive lock (pip-compile, uv lock). A resolver
+# can still pull a different sub-dependency tomorrow. Upgrade path if this ever
+# needs to be reproducible byte-for-byte: `uv pip compile --generate-hashes`.
+fastapi==0.140.0
+uvicorn[standard]==0.51.0
+sqlalchemy[asyncio]==2.0.51
+alembic==1.18.5
+asyncpg==0.31.0
+pgvector==0.5.0
+pydantic-settings==2.14.2
+httpx==0.28.1
+tenacity==9.1.4
+anthropic==0.120.0
+google-genai==2.14.0
+opentelemetry-sdk==1.44.0
+opentelemetry-exporter-otlp==1.44.0
+opentelemetry-instrumentation-fastapi==0.65b0
+opentelemetry-exporter-prometheus==0.65b0

@@ -26,7 +26,7 @@ the first token**. The first-token attempt - connection, retries, timeout - is
 guarded; everything after it propagates to the caller, mid-stream, unwrapped.
 `test_stream_does_not_fail_over_after_first_token` pins this.
 
-ponytail: the deadline is `asyncio.timeout` here rather than per-SDK timeout
+trade-off: the deadline is `asyncio.timeout` here rather than per-SDK timeout
 settings, so both vendors behave identically and streams get the same guard.
 Ceiling: a provider used *without* this wrapper keeps its SDK's default timeout
 (10 minutes for Anthropic). Upgrade path: pass the timeout into the SDK clients

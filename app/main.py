@@ -6,7 +6,10 @@ test suite asserts on, because CI and the ``/health`` path must not pay for a
 2 GB ML stack.
 """
 
+from pathlib import Path
+
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from app.api import ask, health, ingest, stats
 from app.config import settings
@@ -26,3 +29,9 @@ setup_tracing(app)
 # Prometheus exposition. Mounting is what installs the meter provider, so
 # instruments created earlier in the process start reporting from here on.
 app.mount("/metrics", metrics_app())
+
+# The demo page, last: a mount at "/" swallows every path not already claimed, so
+# it must come after the routers and /metrics or it would shadow them. One static
+# file, no build step, served from the app itself — which is also what keeps it
+# same-origin, so /ask needs no CORS middleware.
+app.mount("/", StaticFiles(directory=Path(__file__).parent / "static", html=True))

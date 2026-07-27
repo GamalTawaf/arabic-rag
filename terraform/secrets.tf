@@ -13,6 +13,7 @@ locals {
     "database-url"      = "DATABASE_URL"
     "anthropic-api-key" = "ANTHROPIC_API_KEY"
     "google-api-key"    = "GOOGLE_API_KEY"
+    "ingest-api-key"    = "INGEST_API_KEY"
   }
 
   # Only the LLM keys get a placeholder version. database-url's real value is
@@ -60,6 +61,28 @@ resource "google_secret_manager_secret_version" "database_url" {
 #
 # `version = "latest"` in run.tf is resolved when an instance starts, so the next
 # cold start picks the new value up without a redeploy.
+# The /ingest key. Generated rather than placeholdered, because a placeholder
+# committed to this repo would be a published password: app/config.py enforces
+# `x-api-key` whenever INGEST_API_KEY is non-empty, so a known value is worse
+# than no value — it looks locked and is not.
+#
+# Terraform owns it for the same reason it owns the database password: something
+# has to write the first version, and only Terraform is running. Read it back
+# with `terraform output -raw ingest_api_key`. Same tfstate-in-cleartext trade as
+# random_password.db above, and the same mitigation — gitignored, local, and the
+# stack it guards is destroyed with the demo.
+resource "random_password" "ingest_key" {
+  length = 32
+  # Alphanumeric only: this value is sent as an HTTP header, and a header whose
+  # correctness depends on shell quoting is a support ticket.
+  special = false
+}
+
+resource "google_secret_manager_secret_version" "ingest_api_key" {
+  secret      = google_secret_manager_secret.app["ingest-api-key"].id
+  secret_data = random_password.ingest_key.result
+}
+
 resource "google_secret_manager_secret_version" "llm_placeholder" {
   for_each = local.llm_secrets
 

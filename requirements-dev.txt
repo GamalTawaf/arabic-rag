@@ -1,8 +1,8 @@
 -r requirements.txt
-pytest
-pytest-asyncio
-pytest-cov
-httpx
-aiosqlite
-ruff
-pip-audit
+pytest==9.1.1
+pytest-asyncio==1.4.0
+pytest-cov==7.1.0
+httpx==0.28.1
+aiosqlite==0.22.1
+ruff==0.16.0
+pip-audit==2.10.1

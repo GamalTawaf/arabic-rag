@@ -64,7 +64,7 @@ resource "google_sql_database_instance" "pg" {
     }
 
     ip_configuration {
-      # ponytail: public IP with an EMPTY authorized_networks list, not a private
+      # trade-off: public IP with an EMPTY authorized_networks list, not a private
       # IP behind Private Service Access.
       #
       # This is a judgement call and it is the one place this stack departs from

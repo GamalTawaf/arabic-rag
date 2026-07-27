@@ -77,7 +77,7 @@ def validate_pair(raw: dict) -> EvalPair:
     if missing:
         raise ValueError(f"pair {pair_id!r}: missing field(s) {', '.join(sorted(missing))}")
 
-    # ponytail: extra keys are ignored rather than rejected so annotators can keep
+    # trade-off: extra keys are ignored rather than rejected so annotators can keep
     # notes in the file. Upgrade path: switch to a pydantic model with extra="forbid".
     for field in ("question", "answer", "source_doc"):
         value = raw[field]

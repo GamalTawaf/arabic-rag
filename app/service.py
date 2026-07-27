@@ -25,7 +25,9 @@ is the point of the design rather than an optimisation:
    283 eval pairs the cross-encoder's top score does not separate answerable
    from unanswerable well enough to gate on — see docs/refusal-calibration.md
    and :meth:`RagService._is_refusal`.
-3. **Spend cap** — checked with an estimate *before* the call, never after.
+3. **Spend cap** — the estimate is *reserved* before the call and settled against
+   the real cost after it, so concurrent requests cannot all pass one cap with
+   room for one (:meth:`app.observability.cost.SpendTracker.reserve`).
 
 **Multi-query retrieval.** ``RuleBasedPlanner`` returns both the user's original
 question and its MSA rewrite; each is retrieved with, and the ranked lists are
@@ -65,7 +67,8 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.generation.base import ProviderError, Usage, usage_cost_usd
+from app.config import Settings
+from app.generation.base import Provider, ProviderError, Usage, usage_cost_usd
 from app.generation.budget import (
     NOT_IN_CORPUS,
     build_prompt,
@@ -75,6 +78,7 @@ from app.generation.budget import (
 from app.generation.failover import AllProvidersFailed
 from app.models.chunks import Chunk
 from app.models.query_cache import CACHE_DIM
+from app.observability.cost import SpendTracker
 from app.observability.tracing import (
     record_cache_lookup,
     record_llm_call,
@@ -82,9 +86,10 @@ from app.observability.tracing import (
     span,
 )
 from app.planning.dialect import GULF
-from app.planning.planner import Plan
+from app.planning.planner import Plan, Planner
 from app.retrieval.cache import CachedAnswer, lookup, store
-from app.retrieval.rerank import RERANK_SOURCE
+from app.retrieval.embed import Embedder
+from app.retrieval.rerank import RERANK_SOURCE, Reranker
 from app.retrieval.search import (
     Hit,
     dense_search,
@@ -115,6 +120,23 @@ REFUSALS: dict[str, str] = {
     "msa": NOT_IN_CORPUS,
     GULF: "المواد المتوفرة ما فيها جواب عن هذا السؤال.",
 }
+
+
+def _is_refusal_text(text: str) -> bool:
+    """Whether a generated answer is the model declining, in either register.
+
+    Matched on the prompt's own refusal strings (``build_prompt`` instructs the
+    model to reply with exactly ``NOT_IN_CORPUS``), because the score gate is no
+    longer the live refusal path — see :meth:`RagService._store`.
+
+    # trade-off: exact-ish string matching, so a model that paraphrases its
+    # refusal is not recognised and gets cached. That is the same failure the
+    # unmeasured-abstention gap in the README already names; the guard closes the
+    # deterministic case. Upgrade path: have the model emit a structured
+    # refusal flag rather than a sentence.
+    """
+    stripped = text.strip()
+    return any(stripped.startswith(refusal.rstrip(".")) for refusal in REFUSALS.values())
 
 
 @dataclass(frozen=True)
@@ -155,6 +177,11 @@ class _Prepared:
     query_vec: list[float] | None
     cached: CachedAnswer | None
     refused: bool
+    config: str = DEFAULT_CONFIG
+    #: USD held against the daily cap by ``_reserve_spend``; 0.0 on the cached
+    #: and refused paths, which never reach a provider. Handed to
+    #: ``SpendTracker.settle`` exactly once, in a ``finally``.
+    reserved_usd: float = 0.0
     stages: dict[str, float] = field(default_factory=dict)
 
 
@@ -230,25 +257,46 @@ def usage_payload(usage: Usage | None) -> dict | None:
     }
 
 
+def _cited_scores(cited: Sequence[object]) -> list[tuple[str, float]]:
+    """``query_cache.citations`` as ``(chunk_id, score)``, in stored order.
+
+    Two shapes live in that JSONB column. Entries written now are
+    ``{"chunk_id", "score"}``; entries written before scores were stored are bare
+    id strings, and there is no TTL or invalidation (see :func:`cache.store`), so
+    they stay readable rather than being dropped or crashing the hit. A legacy
+    entry scores 0.0 — the same value it has always reported.
+    """
+    pairs: list[tuple[str, float]] = []
+    for entry in cited:
+        if isinstance(entry, str):
+            pairs.append((entry, 0.0))
+        elif isinstance(entry, dict) and isinstance(entry.get("chunk_id"), str):
+            score = entry.get("score")
+            pairs.append(
+                (entry["chunk_id"], float(score) if isinstance(score, int | float) else 0.0)
+            )
+        # Anything else is a row this version did not write and cannot read; skip
+        # it rather than fail the cache hit over one malformed citation.
+    return pairs
+
+
 async def _hydrate_citations(
-    session: AsyncSession, chunk_ids: Sequence[str]
+    session: AsyncSession, cited: Sequence[object]
 ) -> list[Citation]:
-    """Rebuild citations for a cache hit from the chunk ids the cache stored.
+    """Rebuild citations for a cache hit from what the cache stored.
 
     One indexed primary-key lookup. The alternative — returning bare ids — would
-    make a cached response visibly worse than a generated one in any UI.
-
-    # ponytail: score comes back 0.0 because the cache stores ids, not scores. A
-    # cached citation is "this is what the answer cited", not "this ranked here".
-    # Upgrade path if the UI ever sorts by it: store (id, score) pairs in
-    # query_cache.citations, which is already JSONB.
+    make a cached response visibly worse than a generated one in any UI, which is
+    also why the rerank score is stored and replayed rather than zeroed: a cached
+    answer and a freshly generated one now render identically.
     """
-    if not chunk_ids:
+    pairs = _cited_scores(cited)
+    if not pairs:
         return []
     rows = (
         await session.execute(
             select(Chunk.id, Chunk.doc_id, Chunk.article, Chunk.text).where(
-                Chunk.id.in_(list(chunk_ids))
+                Chunk.id.in_([chunk_id for chunk_id, _ in pairs])
             )
         )
     ).all()
@@ -258,10 +306,10 @@ async def _hydrate_citations(
             chunk_id=chunk_id,
             doc_id=by_id[chunk_id].doc_id,
             article=by_id[chunk_id].article,
-            score=0.0,
+            score=score,
             excerpt=_excerpt(by_id[chunk_id].text),
         )
-        for chunk_id in chunk_ids
+        for chunk_id, score in pairs
         if chunk_id in by_id
     ]
 
@@ -276,12 +324,12 @@ class RagService:
 
     def __init__(
         self,
-        embedder: Any,
-        reranker: Any,
-        planner: Any,
-        provider: Any,
-        spend_tracker: Any,
-        settings: Any,
+        embedder: Embedder,
+        reranker: Reranker,
+        planner: Planner,
+        provider: Provider,
+        spend_tracker: SpendTracker,
+        settings: Settings,
     ) -> None:
         self.embedder = embedder
         self.reranker = reranker
@@ -310,18 +358,27 @@ class RagService:
         if prepared.refused:
             return self._finish(prepared, self._refusal(prepared.plan), None, started)
 
-        async with _stage(prepared.stages, "generate") as generate_span:
-            completion = await self.provider.complete(
-                prepared.system,
-                [{"role": "user", "content": prepared.user}],
-                max_tokens=ANSWER_MAX_TOKENS,
-            )
-            self._record_usage(
-                generate_span,
-                completion.usage,
-                provider=completion.provider,
-                model=completion.model,
-            )
+        settled = False
+        try:
+            async with _stage(prepared.stages, "generate") as generate_span:
+                completion = await self.provider.complete(
+                    prepared.system,
+                    [{"role": "user", "content": prepared.user}],
+                    max_tokens=ANSWER_MAX_TOKENS,
+                )
+                self._record_usage(
+                    generate_span,
+                    completion.usage,
+                    prepared.reserved_usd,
+                    provider=completion.provider,
+                    model=completion.model,
+                )
+                settled = True
+        finally:
+            # A provider failure leaves the reservation held otherwise, and the
+            # cap would drift shut over a run of errors that cost nothing.
+            if not settled:
+                self.spend.settle(prepared.reserved_usd, 0.0)
 
         await self._store(session, prepared, completion.text)
         return self._finish(prepared, completion.text, completion.usage, started)
@@ -364,27 +421,46 @@ class RagService:
 
         chunks: list[str] = []
         recorded: list[Usage] = []
-        async with _stage(prepared.stages, "generate") as generate_span:
-            try:
-                async for chunk in self.provider.stream(
-                    prepared.system,
-                    [{"role": "user", "content": prepared.user}],
-                    ANSWER_MAX_TOKENS,
-                    on_usage=recorded.append,
-                ):
-                    chunks.append(chunk)
-                    yield EVENT_TOKEN, {"text": chunk}
-            except (AllProvidersFailed, ProviderError) as failure:
-                yield EVENT_ERROR, error_payload(failure)
-                yield EVENT_DONE, {}
-                return
-            usage = recorded[0] if recorded else None
-            self._record_usage(
-                generate_span,
-                usage,
-                provider=self.provider.name,
-                model=self.provider.model,
-            )
+        settled = False
+        try:
+            async with _stage(prepared.stages, "generate") as generate_span:
+                try:
+                    async for chunk in self.provider.stream(
+                        prepared.system,
+                        [{"role": "user", "content": prepared.user}],
+                        ANSWER_MAX_TOKENS,
+                        on_usage=recorded.append,
+                    ):
+                        chunks.append(chunk)
+                        yield EVENT_TOKEN, {"text": chunk}
+                except (AllProvidersFailed, ProviderError) as failure:
+                    yield EVENT_ERROR, error_payload(failure)
+                    yield EVENT_DONE, {}
+                    return
+                usage = recorded[0] if recorded else None
+                self._record_usage(
+                    generate_span,
+                    usage,
+                    prepared.reserved_usd,
+                    # From the usage record, not from `self.provider`: that handle
+                    # is the FailoverProvider wrapper, so its `.name` is
+                    # "failover:anthropic,gemini" and its `.model` is the
+                    # *primary's* even when the backup served this request. The
+                    # non-streaming path already reads Completion.provider/model
+                    # for exactly this reason.
+                    provider=(usage.provider if usage else None) or self.provider.name,
+                    model=(usage.model if usage else None) or self.provider.model,
+                )
+                settled = True
+        finally:
+            # The load-bearing `finally` on this path. A browser closing an SSE
+            # tab throws GeneratorExit at the `yield` above, which used to skip
+            # the accounting entirely: the vendor had billed real tokens and the
+            # tracker recorded $0, so repeat-disconnect traffic made the daily cap
+            # a no-op. Whatever the provider already reported is settled here.
+            if not settled:
+                spent = recorded[0].cost_usd if recorded else 0.0
+                self.spend.settle(prepared.reserved_usd, spent)
 
         await self._store(session, prepared, "".join(chunks))
         yield EVENT_FINAL, self._final_payload(prepared, usage, started)
@@ -414,7 +490,7 @@ class RagService:
         vectors = await self._embed(plan, config, stages)
         query_vec = vectors.get(plan.original)
 
-        cached = await self._lookup_cache(session, plan, query_vec, stages)
+        cached = await self._lookup_cache(session, plan, query_vec, config, stages)
         if cached is not None:
             return _Prepared(
                 plan=plan,
@@ -424,6 +500,7 @@ class RagService:
                 query_vec=query_vec,
                 cached=cached,
                 refused=False,
+                config=config,
                 stages=stages,
             )
 
@@ -440,12 +517,13 @@ class RagService:
                 query_vec=query_vec,
                 cached=None,
                 refused=True,
+                config=config,
                 stages=stages,
             )
 
         kept, _ = fit_context(hits, self.settings.max_context_tokens)
         system, user = build_prompt(plan.original, kept)
-        self._check_spend(system, user)
+        reserved = self._reserve_spend(system, user)
         return _Prepared(
             plan=plan,
             citations=[_citation(hit) for hit in kept],
@@ -454,6 +532,8 @@ class RagService:
             query_vec=query_vec,
             cached=None,
             refused=False,
+            config=config,
+            reserved_usd=reserved,
             stages=stages,
         )
 
@@ -478,6 +558,7 @@ class RagService:
         session: AsyncSession,
         plan: Plan,
         query_vec: list[float] | None,
+        config: str,
         stages: dict[str, float],
     ) -> CachedAnswer | None:
         if not self._cache_enabled or query_vec is None:
@@ -488,6 +569,7 @@ class RagService:
                 plan.original,
                 query_vec,
                 self.embedder.model_key,
+                self._pipeline_key(config),
                 self.settings.semantic_cache_threshold,
             )
             cache_span.set_attribute("app.cache.hit", cached is not None)
@@ -611,7 +693,7 @@ class RagService:
         top = hits[0]
         return top.source == RERANK_SOURCE and top.score < self.settings.rerank_min_score
 
-    def _check_spend(self, system: str, user: str) -> None:
+    def _reserve_spend(self, system: str, user: str) -> float:
         """Cap check *before* the call, on an estimate. Raises SpendCapExceeded.
 
         The estimate assumes the answer runs to ``ANSWER_MAX_TOKENS``, i.e. it
@@ -619,23 +701,59 @@ class RagService:
         report, not a cap.
         """
         estimated_input = estimate_tokens(system) + estimate_tokens(user)
-        self.spend.check(
+        return self.spend.reserve(
             usage_cost_usd(estimated_input, ANSWER_MAX_TOKENS, self.provider.price())
+        )
+
+    def _pipeline_key(self, config: str) -> str:
+        """Everything except the question that determines the answer.
+
+        The cache is keyed on (model_key, this, embedding, guard). Without it the
+        key is the question alone, so a request under one config is served the
+        answer another config produced — which makes every A/B through the HTTP
+        API a measurement of the cache rather than of the config.
+
+        The generating model belongs in here too: the same retrieval handed to a
+        different model is a different answer, and swapping the model must not
+        silently replay the old one's output.
+        """
+        return "|".join(
+            (
+                config,
+                f"r{self.settings.top_k_retrieve}",
+                f"c{self.settings.top_k_context}",
+                f"rr{int(bool(self.settings.rerank_enabled))}",
+                f"{self.provider.name}:{self.provider.model}",
+            )
         )
 
     async def _store(
         self, session: AsyncSession, prepared: _Prepared, text: str
     ) -> None:
-        """Cache a generated answer. Refusals are never stored (they never reach here)."""
+        """Cache a generated answer. Refusals are never stored.
+
+        The score gate is not the only refusal path and, with
+        ``rerank_min_score`` at its measured 0.0, it is not even the live one —
+        the model declining per the system prompt is. Caching that would pin the
+        refusal: the cache is append-only with no TTL and no invalidation on
+        re-ingestion, so ingesting the very article that was missing would never
+        dislodge it, and the answer would come back with ``refused=false``.
+        """
         if not self._cache_enabled or prepared.query_vec is None or not text.strip():
+            return
+        if _is_refusal_text(text):
             return
         await store(
             session,
             prepared.plan.original,
             prepared.query_vec,
             self.embedder.model_key,
+            self._pipeline_key(prepared.config),
             text,
-            [citation.chunk_id for citation in prepared.citations],
+            [
+                {"chunk_id": citation.chunk_id, "score": citation.score}
+                for citation in prepared.citations
+            ],
         )
 
     # -- helpers -----------------------------------------------------------
@@ -644,12 +762,19 @@ class RagService:
         return REFUSALS.get(plan.register, NOT_IN_CORPUS)
 
     def _record_usage(
-        self, generate_span: Any, usage: Usage | None, *, provider: str, model: str
+        self,
+        generate_span: Any,
+        usage: Usage | None,
+        reserved_usd: float,
+        *,
+        provider: str,
+        model: str,
     ) -> None:
         if usage is None:  # pragma: no cover - providers always report usage
+            self.spend.settle(reserved_usd, 0.0)
             record_cache_lookup(hit=False)
             return
-        self.spend.record(usage.cost_usd)
+        self.spend.settle(reserved_usd, usage.cost_usd)
         record_llm_call(
             generate_span,
             provider=provider,

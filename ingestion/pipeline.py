@@ -53,7 +53,7 @@ async def ingest_documents(
 ) -> IngestStats:
     """Chunk every document and upsert the chunks. Commits before returning.
 
-    ponytail: embedding at ingest time is optional and single-model. The normal
+    trade-off: embedding at ingest time is optional and single-model. The normal
     path leaves every vector column NULL and lets the phase-2 backfill script
     fill one model at a time — that is what makes the 4-model benchmark cheap to
     re-run. Pass an `embedder` only when you want one model written inline.
@@ -104,7 +104,7 @@ async def ingest_documents(
 def _unique_id(chunk_id: str, seen: dict[str, int]) -> tuple[str, int]:
     """Renumber `seq` so ids are unique within a document.
 
-    ponytail: `chunk_document` restarts `seq` at 0 for every article heading, and
+    trade-off: `chunk_document` restarts `seq` at 0 for every article heading, and
     real statutes repeat an article number — Law 14/2004 has both "مواد الإصدار"
     1-4 and its own articles 1-4, plus "المادة 52 مكرر". Numbering per
     (doc, article) across the whole document keeps every id unique and still a
@@ -146,7 +146,7 @@ async def _with_embeddings(
 ) -> list[dict[str, Any]]:
     """Return copies of `rows` with the model's vector column filled in.
 
-    ponytail: embeds `text` (the original), not `text_normalized`. Normalization is
+    trade-off: embeds `text` (the original), not `text_normalized`. Normalization is
     a lexical device — it folds hamza seats and ta marbuta so the tsvector matches —
     and the multilingual encoders were trained on natural Arabic, diacritics and
     all. Ceiling: it is an assumption, not a measurement. Upgrade path: phase 2 runs

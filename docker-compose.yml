@@ -23,7 +23,7 @@ services:
       - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      # Creates rag_test next to rag_db. Without it `pytest` skips 153 tests and
+      # Creates rag_test next to rag_db. Without it `pytest` skips 167 tests and
       # still exits 0 — see the comment in the file.
       - ./docker/init-rag-test-db.sql:/docker-entrypoint-initdb.d/01-rag-test.sql:ro
 

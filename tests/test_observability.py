@@ -14,6 +14,7 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from app.observability import cost, tracing
+from app.observability.cost import SpendCapExceeded, SpendTracker
 
 
 @pytest.fixture
@@ -394,3 +395,58 @@ def test_get_spend_tracker_is_a_process_singleton():
     assert first is second
     assert first.cap_usd == settings.daily_spend_cap_usd
     cost.reset_spend_tracker()
+
+
+# ------------------------------------------------- reserve / settle (the race)
+
+
+def test_reserve_holds_the_estimate_so_concurrent_callers_cannot_all_pass():
+    """Regression: check-then-record straddled the provider await.
+
+    Every in-flight request read the same pre-call total, so N concurrent
+    requests all passed a cap with room for one. Measured before the fix: 10
+    concurrent calls against a cap with room for 3 spent 2.56x the cap.
+    """
+    # Arrange — room for exactly two calls at the estimate
+    tracker = SpendTracker(cap_usd=0.03, clock=lambda: "2026-07-26")
+    estimate = 0.01
+
+    # Act — three callers reserve before any of them settles
+    first = tracker.reserve(estimate)
+    second = tracker.reserve(estimate)
+    with pytest.raises(SpendCapExceeded):
+        tracker.reserve(estimate)
+
+    # Assert — the two holds are already debited, the third never ran
+    assert tracker.today().usd == pytest.approx(0.02)
+    assert tracker.today().calls == 0  # a hold is not a call
+    tracker.settle(first, 0.008)
+    tracker.settle(second, 0.012)
+    assert tracker.today().usd == pytest.approx(0.02)
+    assert tracker.today().calls == 2
+
+
+def test_settle_releases_the_hold_when_the_call_produced_nothing():
+    # Arrange
+    tracker = SpendTracker(cap_usd=1.0, clock=lambda: "2026-07-26")
+    held = tracker.reserve(0.25)
+
+    # Act — the provider failed, or the client vanished mid-stream
+    tracker.settle(held, 0.0)
+
+    # Assert — the cap is not left permanently narrowed by a free failure
+    assert tracker.today().usd == pytest.approx(0.0)
+
+
+def test_settle_never_drives_the_total_negative_across_a_day_rollover():
+    # Arrange — the clock advances between the reserve and the settle
+    day = {"value": "2026-07-26"}
+    tracker = SpendTracker(cap_usd=1.0, clock=lambda: day["value"])
+    held = tracker.reserve(0.5)
+    day["value"] = "2026-07-27"  # midnight UTC resets the counter to zero
+
+    # Act
+    tracker.settle(held, 0.1)
+
+    # Assert
+    assert tracker.today().usd >= 0.0

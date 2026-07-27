@@ -6,9 +6,10 @@ locals {
   # secret_key_ref below instead.
   plain_env = merge(
     {
-      ENV                 = "production"
-      RERANK_ENABLED      = var.rerank_enabled ? "true" : "false"
-      DAILY_SPEND_CAP_USD = tostring(var.daily_spend_cap_usd)
+      ENV                       = "production"
+      RERANK_ENABLED            = var.rerank_enabled ? "true" : "false"
+      DAILY_SPEND_CAP_USD       = tostring(var.daily_spend_cap_usd)
+      ASK_RATE_LIMIT_PER_MINUTE = tostring(var.ask_rate_limit_per_minute)
 
       # Set even when no exporter is configured: it is what a span ends up
       # labelled as if one ever is, and it costs nothing to be right in advance.

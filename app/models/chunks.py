@@ -28,7 +28,7 @@ EMBEDDING_DIMS: dict[str, int] = {
     "cohere": 1536,  # cohere embed-v4
 }
 
-# ponytail: HNSW ceiling in pgvector is 2000 dims, so emb_openai (3072) gets no
+# trade-off: HNSW ceiling in pgvector is 2000 dims, so emb_openai (3072) gets no
 # index — exact scan is fine at corpus scale (a few thousand chunks, single-digit
 # ms). Upgrade path when the corpus grows: store it as halfvec(3072) and index
 # with halfvec_cosine_ops, or reduce dimensions via the OpenAI `dimensions` param.

@@ -23,7 +23,7 @@ request or a missing key - and it will fail identically on the next provider.
 Failing over would just burn a second provider's quota and bury the real error
 behind a generic "all providers failed".
 
-ponytail: one exception class with a `kind` field instead of a five-class
+trade-off: one exception class with a `kind` field instead of a five-class
 hierarchy. Ceiling: callers cannot `except RateLimitError` - they branch on
 `.kind`. Upgrade path: subclass per kind if a caller ever needs that.
 """
@@ -40,11 +40,23 @@ TOKENS_PER_MILLION = 1_000_000
 
 @dataclass(frozen=True)
 class Usage:
-    """Real token counts from the provider, priced with that provider's rates."""
+    """Real token counts from the provider, priced with that provider's rates.
+
+    ``provider``/``model`` name whoever *actually* produced the tokens. They live
+    here rather than being read off the caller's provider handle because under
+    failover that handle is the ``FailoverProvider`` wrapper: on the streaming
+    path there is no ``Completion`` to read attribution from, so cost and traces
+    were being filed under ``failover:anthropic,gemini`` and the *primary's*
+    model even when the backup served the request. Carrying it on the immutable
+    usage record keeps it correct without a mutable "last used" field that two
+    concurrent streams would race over.
+    """
 
     input_tokens: int
     output_tokens: int
     cost_usd: float
+    provider: str | None = None
+    model: str | None = None
 
 
 @dataclass(frozen=True)

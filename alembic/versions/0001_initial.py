@@ -54,7 +54,7 @@ def upgrade() -> None:
     op.create_index("ix_chunks_doc_id", "chunks", ["doc_id"])
     op.create_index("ix_chunks_tsv", "chunks", ["tsv"], postgresql_using="gin")
 
-    # ponytail: no HNSW index on emb_openai — pgvector caps HNSW at 2000 dims and
+    # trade-off: no HNSW index on emb_openai — pgvector caps HNSW at 2000 dims and
     # text-embedding-3-large is 3072. Exact scan is fine at corpus scale (a few
     # thousand chunks). Upgrade path: halfvec(3072) + halfvec_cosine_ops, or ask
     # OpenAI for reduced `dimensions`.

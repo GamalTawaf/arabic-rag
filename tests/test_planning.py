@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 
+from app.generation.base import Completion, Usage
 from app.planning import (
     GULF_TO_MSA,
     REGISTER_MARKERS,
@@ -27,7 +28,7 @@ from app.planning import (
     gulf_to_msa,
 )
 from app.planning.lexicon import _merge
-from app.planning.planner import MAX_SEARCH_QUERIES, _resolve_complete
+from app.planning.planner import MAX_SEARCH_QUERIES
 from ingestion.normalize import normalize_query
 
 DATASET = Path(__file__).resolve().parents[1] / "evals" / "data" / "eval_pairs.jsonl"
@@ -257,15 +258,31 @@ async def test_rule_based_planner_caps_the_query_count():
 
 # ── LLM planner ───────────────────────────────────────────────────────────────
 class _MockProvider:
-    """Stands in for app.generation's Provider: one prompt in, one string out."""
+    """Stands in for app.generation's Provider — the REAL signature.
+
+    ``complete(system, messages, max_tokens) -> Completion``. An earlier version
+    of this double took a single prompt string and returned a bare ``str``, a
+    contract no shipped provider implements; it passed happily while LLMPlanner
+    could not actually call any provider at all. A double that does not match the
+    protocol tests nothing.
+    """
 
     def __init__(self, reply: str) -> None:
         self.reply = reply
         self.prompts: list[str] = []
+        self.systems: list[str] = []
 
-    async def complete(self, prompt: str) -> str:
-        self.prompts.append(prompt)
-        return self.reply
+    async def complete(
+        self, system: str, messages: list[dict], max_tokens: int = 1024
+    ) -> Completion:
+        self.systems.append(system)
+        self.prompts.append("\n".join(message["content"] for message in messages))
+        return Completion(
+            text=self.reply,
+            usage=Usage(input_tokens=10, output_tokens=20, cost_usd=0.0),
+            provider="mock",
+            model="mock-1",
+        )
 
 
 async def test_llm_planner_uses_the_provider_rewrite_and_sub_queries():
@@ -317,9 +334,27 @@ def test_llm_planner_without_a_provider_errors_clearly(monkeypatch):
     assert "rules" in str(excinfo.value)  # names the working alternative
 
 
-def test_llm_planner_rejects_a_provider_with_no_usable_method():
-    with pytest.raises(PlannerUnavailable, match="neither complete"):
-        _resolve_complete(object())
+def test_llm_planner_builds_the_configured_chain_when_a_key_is_present(monkeypatch):
+    """Regression: ``get_provider()`` was called with no argument against
+    ``get_provider(name)``, so construction ALWAYS raised PlannerUnavailable —
+    and blamed a missing API key that was in fact set."""
+    monkeypatch.setattr("app.config.settings.anthropic_api_key", "sk-test", raising=False)
+    monkeypatch.setattr("app.config.settings.providers", "anthropic", raising=False)
+
+    planner = LLMPlanner()
+
+    assert planner._provider.name == "failover:anthropic"
+
+
+async def test_llm_planner_calls_the_provider_with_the_real_protocol():
+    """system + messages + max_tokens, and it reads ``Completion.text``."""
+    provider = _MockProvider('{"rewritten": "كم يوم؟", "sub_queries": []}')
+
+    plan = await LLMPlanner(provider).plan(GULF_Q)
+
+    assert provider.systems[0].startswith("أنت مساعد")
+    assert GULF_Q in provider.prompts[0]
+    assert plan.strategy == "llm"
 
 
 # ── factory ───────────────────────────────────────────────────────────────────
@@ -343,3 +378,51 @@ def test_get_planner_llm_is_unavailable_without_keys(monkeypatch):
 
     with pytest.raises(PlannerUnavailable):
         get_planner("llm")
+
+
+def test_a_word_that_merely_ends_in_an_interrogative_is_not_one():
+    """Regression: `token[1:]` stripped the first letter of EVERY token.
+
+    حكم ("ruling") became كم ("how many") — and this is a labour-law corpus, so
+    that word is everywhere. The phantom interrogative invented a second question
+    and split the query into two searches, one of them nonsense.
+    """
+    assert decompose("ما حكم الفصل التعسفي في القانون؟") == [
+        "ما حكم الفصل التعسفي في القانون؟"
+    ]
+
+
+def test_a_real_proclitic_conjunction_is_still_stripped():
+    """و and ف genuinely glue onto the next word; فماذا is فـ + ماذا."""
+    parts = decompose(
+        "إذا استدعي الموظف في يوم راحته، فماذا يستحق؟ وهل يمكن تكرار ذلك؟"
+    )
+    assert len(parts) == 2
+
+
+def test_an_ordinary_word_starting_with_sheen_is_not_a_clause_boundary():
+    """Regression: the one-letter "ش" stem matched the start of any ش word.
+
+    "الأجر وشروط العمل" — "pay and conditions of work" — split into two clauses
+    because وشروط looks like و + ش.
+    """
+    assert decompose("هل الأجر وشروط العمل مذكورة في العقد؟") == [
+        "هل الأجر وشروط العمل مذكورة في العقد؟"
+    ]
+
+
+def test_the_dataset_decomposition_rate_has_not_regressed():
+    """The decomposition arm is a measured result; guard the aggregate.
+
+    25, not 24: 24 was the intermediate count while the proclitic guard was too
+    broad and swallowed the فـ in فماذا, which stopped msa-5-028 splitting. The
+    guard was then narrowed to real Arabic proclitics and that question splits
+    again — the case
+    :func:`test_a_real_proclitic_conjunction_is_still_stripped` above pins
+    directly. A bare total cannot say which question moved, so if this fails,
+    diff the split ids before touching the number: 24 here once meant a genuine
+    regression was passing.
+    """
+    pairs = _dataset()
+    split = sum(1 for pair in pairs if len(decompose(pair["question"])) > 1)
+    assert split == 25, f"decomposition rate moved: {split}/283"

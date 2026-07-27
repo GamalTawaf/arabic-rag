@@ -7,7 +7,7 @@ so it needs a single column plus a ``model_key`` tag to prove which model
 produced it. Mixing the two would put four mostly-NULL vector columns and a
 cache lifecycle on the corpus table.
 
-# ponytail: one 1024-dim column, sized for the two local models (e5, bge) that
+# trade-off: one 1024-dim column, sized for the two local models (e5, bge) that
 # the service actually runs. OpenAI (3072) and Cohere (1536) cannot be cached
 # here — :func:`app.retrieval.cache.lookup` rejects them loudly rather than
 # silently truncating. Upgrade path if the service ever runs an API embedder:
@@ -40,8 +40,20 @@ class QueryCache(Base):
     embedding: Mapped[list[float]] = mapped_column(Vector(CACHE_DIM), nullable=False)
     model_key: Mapped[str] = mapped_column(String, nullable=False)
 
+    # Everything *other than the question* that determines the answer: retrieval
+    # config, depths, and the generating model. Without it the cache is keyed on
+    # the question alone, so asking the same thing under `config=lexical` returns
+    # the answer `config=hybrid+rerank` produced — which silently turns any A/B
+    # through the HTTP API into a measurement of the cache. See
+    # :func:`app.service.pipeline_key`.
+    pipeline_key: Mapped[str] = mapped_column(String, nullable=False)
+
     answer: Mapped[str] = mapped_column(Text, nullable=False)
-    citations: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    # ``[{"chunk_id": str, "score": float}]``. Rows written before scores were
+    # stored hold bare id strings; JSONB takes both, and there is no migration
+    # because there is nothing to rewrite — app.service._cited_scores reads either
+    # shape and an unscored legacy row keeps reporting 0.0.
+    citations: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
 
     hits: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     created_at: Mapped[datetime] = mapped_column(
@@ -52,7 +64,7 @@ class QueryCache(Base):
     )
 
     __table_args__ = (
-        Index("ix_query_cache_model_key", "model_key"),
+        Index("ix_query_cache_scope", "model_key", "pipeline_key"),
         # HNSW post-filters the model_key predicate rather than pre-filtering it.
         # Irrelevant at cache scale (thousands of rows, one model in practice);
         # upgrade path is a partial index per model_key if that ever changes.

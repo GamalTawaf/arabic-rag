@@ -44,8 +44,14 @@ async def test_stats_reports_the_real_corpus_and_embedding_coverage(client, db_s
 
 async def test_stats_reports_cache_size_and_hit_ratio(client, db_session):
     # Arrange — one stored answer, served once
-    await cache_store(db_session, "سؤال", unit_vector(0), "bge", "جواب", ["law:49:0"])
-    assert await cache_lookup(db_session, "سؤال", unit_vector(0), "bge") is not None
+    pipeline = "hybrid+rerank|r20|c5|rr1|fake:fake-1"
+    await cache_store(
+        db_session, "سؤال", unit_vector(0), "bge", pipeline, "جواب", ["law:49:0"]
+    )
+    assert (
+        await cache_lookup(db_session, "سؤال", unit_vector(0), "bge", pipeline)
+        is not None
+    )
 
     # Act
     body = (await client.get("/stats")).json()

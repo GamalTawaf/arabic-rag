@@ -25,6 +25,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import OperationalError
 
 from app.api.ingest import get_ingest_embedder
+from app.config import settings
 from app.db import get_db
 from app.ingest_worker import MAX_TEXT_CHARS, RejectedMessage, decode_push
 from app.main import app
@@ -423,3 +424,66 @@ def test_the_ingest_endpoint_imports_neither_torch_nor_sentence_transformers():
 
     # Assert
     assert result.stdout.strip() == "0 0", result.stdout
+
+
+# ------------------------------------------------------------ x-api-key gate
+
+
+async def test_ingest_is_open_when_no_key_is_configured(client, db_session, embedder):
+    # Arrange — the shipped default: empty key, local demo runs with no config
+    assert settings.ingest_api_key == ""
+
+    # Act
+    response = await client.post("/ingest", json=document())
+
+    # Assert
+    assert response.status_code == 200
+
+
+async def test_ingest_rejects_a_missing_or_wrong_key_once_one_is_configured(
+    client, db_session, embedder, monkeypatch
+):
+    # Arrange
+    monkeypatch.setattr(settings, "ingest_api_key", "s3cret")
+
+    # Act
+    missing = await client.post("/ingest", json=document())
+    wrong = await client.post(
+        "/ingest", json=document(), headers={"x-api-key": "s3cre7"}
+    )
+
+    # Assert — and nothing was written
+    assert missing.status_code == 401
+    assert wrong.status_code == 401
+    assert await count_chunks(db_session) == 0
+
+
+async def test_ingest_accepts_the_configured_key(
+    client, db_session, embedder, monkeypatch
+):
+    # Arrange
+    monkeypatch.setattr(settings, "ingest_api_key", "s3cret")
+
+    # Act
+    response = await client.post(
+        "/ingest", json=document(), headers={"x-api-key": "s3cret"}
+    )
+
+    # Assert
+    assert response.status_code == 200
+    assert await count_chunks(db_session) == 3
+
+
+async def test_the_pubsub_push_route_is_not_behind_the_api_key(
+    client, db_session, embedder, monkeypatch
+):
+    """It is OIDC-authenticated at the infra layer instead; see the route docstring."""
+    # Arrange
+    monkeypatch.setattr(settings, "ingest_api_key", "s3cret")
+
+    # Act
+    response = await client.post("/ingest/pubsub", json=push_body())
+
+    # Assert
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"

@@ -7,9 +7,11 @@ that touches the real BAAI/bge-reranker-v2-m3 is opt-in via RERANK_REAL_MODEL=1.
 
 from __future__ import annotations
 
+import asyncio
 import math
 import os
 import threading
+import time
 
 import pytest
 
@@ -301,3 +303,29 @@ async def test_real_cross_encoder_ranks_the_relevant_arabic_chunk_first():
     # ~0.5000 instead of ~0.0 — ordering survives, but every threshold breaks.
     assert ranked[0].score > 0.5
     assert ranked[-1].score < 0.1
+
+
+async def test_concurrent_cold_starts_build_the_model_once():
+    """Two requests arriving on a cold instance must not each build ~2 GB of weights.
+
+    `_load` runs inside `to_thread`, so without a lock both worker threads can
+    see `_model is None` and construct in parallel.
+    """
+    # Arrange — a slow build, so the second caller is guaranteed to arrive mid-build
+    reranker = CrossEncoderReranker()
+    builds = []
+
+    def slow_build():
+        builds.append(1)
+        time.sleep(0.05)
+        return FakeCrossEncoder({"alpha": 1.0})
+
+    reranker._build_model = slow_build
+
+    # Act
+    await asyncio.gather(
+        *(reranker.rerank("q", [_hit("c1", "alpha")]) for _ in range(4))
+    )
+
+    # Assert
+    assert len(builds) == 1

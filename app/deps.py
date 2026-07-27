@@ -13,7 +13,7 @@ fresh, honest failure on every request instead of one poisoned singleton.
 from __future__ import annotations
 
 from functools import cache
-from typing import Annotated, Any
+from typing import TYPE_CHECKING, Annotated
 
 from fastapi import Depends, HTTPException, status
 
@@ -23,6 +23,12 @@ from app.retrieval.embed import Embedder, get_embedder
 from app.retrieval.rerank import Reranker, get_reranker
 from app.service import RagService
 
+if TYPE_CHECKING:
+    # Import-time only: the runtime imports inside build_planner/build_provider
+    # are what keep torch and the provider SDKs off the /health import path.
+    from app.generation.base import Provider
+    from app.planning.planner import Planner
+
 #: The embedding model the *service* runs. Not ``settings.embedding_model``:
 #: that field names an API model (`text-embedding-3-large`) this deployment has
 #: no key for, and it is the benchmark's variable, not the service's.
@@ -31,7 +37,7 @@ from app.service import RagService
 #: ~2.6 ms mean / 3.9 ms p95, and a Gulf-dialect penalty of -0.4 points against
 #: e5's -9.9. It is also 1024-dim, which is what `query_cache` stores.
 #:
-#: # ponytail: a module constant, because config lives in app/config.py and that
+#: # trade-off: a module constant, because config lives in app/config.py and that
 #: # file is not mine to edit. Upgrade path: add `retrieval_model_key: str =
 #: # "bge"` to Settings and read it here.
 SERVICE_MODEL_KEY = "bge"
@@ -57,14 +63,14 @@ def build_reranker() -> Reranker:
 
 
 @cache
-def build_planner() -> Any:
+def build_planner() -> Planner:
     from app.planning.planner import get_planner
 
     return get_planner(SERVICE_PLANNER)
 
 
 @cache
-def build_provider() -> Any:
+def build_provider() -> Provider:
     """The failover chain from ``settings.providers``. Raises without API keys."""
     from app.generation.failover import FailoverProvider
 

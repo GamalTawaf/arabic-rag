@@ -45,7 +45,7 @@ nobody allocated for fails the replay instead of quietly going unmeasured.
 
 | stage | measured p95 | allocation | basis |
 |---|---|---|---|
-| `plan` | 0.07 ms | 5 | Rule-based Gulf→MSA rewrite: regex and a ~30-entry lexicon, no I/O. The allocation is granularity, not headroom. An `LLMPlanner` would move this to a full provider round-trip and the budget would have to be rewritten. |
+| `plan` | 0.07 ms | 5 | Rule-based Gulf→MSA rewrite: regex and a 77-entry lexicon, no I/O. The allocation is granularity, not headroom. An `LLMPlanner` would move this to a full provider round-trip and the budget would have to be rewritten. |
 | `embed` | 29.6 ms | 120 | One query through `bge-m3` on MPS, batch of 1. **~4× headroom on purpose**: this is the stage most sensitive to the host. A CPU-only Cloud Run container has no MPS, and batch-of-1 transformer inference is exactly where that hurts. |
 | `cache.lookup` | 2.1 ms | 25 | One pgvector cosine query against the `query_cache` table on a local Postgres. Headroom is for a real network hop and a connection-pool wait. |
 | `retrieve` | 14.0 ms | 60 | Covers the *whole* retrieve stage, which for a Gulf question is two searches (original + MSA rewrite), each of which is itself a dense leg and a lexical leg. Consistent with the phase-2 benchmark: dense alone 2.6 ms mean / 3.9 ms p95, hybrid ~4 ms per search. |

@@ -153,7 +153,7 @@ def check(
     lines = [f"  aggregate   {message}", _context_line(current, baseline)]
 
     if current.get("n") != baseline.get("n"):
-        # ponytail: a warning, not a failure — the eval set is expected to grow, and
+        # trade-off: a warning, not a failure — the eval set is expected to grow, and
         # growth would otherwise fail the gate for every PR that adds a pair. Ceiling:
         # deleting hard pairs quietly raises recall. Upgrade path: gate per-pair ids.
         lines.append(
@@ -198,7 +198,7 @@ def render(key: str, current: dict, baseline: dict, document: dict) -> tuple[boo
 
 
 def _git_commit() -> str | None:
-    # ponytail: a copy of benchmark.run._git_commit rather than an import — benchmark
+    # trade-off: a copy of benchmark.run._git_commit rather than an import — benchmark
     # already imports evals, and a shared "repo metadata" module for eight lines of
     # subprocess is the kind of abstraction this repo is trying not to grow.
     try:

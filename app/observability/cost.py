@@ -23,7 +23,7 @@ from app.config import settings
 # this repo — there are no API keys here. Re-check it before quoting a cost per
 # 1K queries in the writeup.
 #
-# ponytail: a hard-coded table, not a pricing API. Prices change a few times a
+# trade-off: a hard-coded table, not a pricing API. Prices change a few times a
 # year; a wrong number here shows up as a wrong dashboard, not a wrong answer.
 # Upgrade path when that stops being acceptable: read it from a JSON file that
 # CI refreshes.
@@ -97,7 +97,7 @@ class SpendTracker:
     Keyed by UTC date: the first call after midnight UTC resets the counter, so
     "today" always means the current UTC day, not a rolling 24 hours.
 
-    ponytail: single-process, in-memory only. Two Cloud Run instances each get
+    trade-off: single-process, in-memory only. Two Cloud Run instances each get
     their own counter, so the effective cap is ``cap x instances``, and a
     restart forgets the day's spend. That is a deliberate simplification, not an
     oversight — with scale-to-zero and a demo-sized workload the failure mode is
@@ -105,8 +105,11 @@ class SpendTracker:
     process. Upgrade path: a Redis INCR keyed ``spend:{date}`` (or a Postgres
     row with an atomic UPDATE ... RETURNING), same public interface.
 
-    Not thread-safe by design: the service is single-threaded asyncio, and
-    ``record`` never awaits, so no two coroutines interleave inside it.
+    Not thread-safe by design: the service is single-threaded asyncio, and no
+    method here awaits, so no two coroutines interleave inside one. That is why
+    the cap is enforced through :meth:`reserve`/:meth:`settle` rather than
+    check-then-record — the *caller's* await is what breaks the invariant, not
+    anything in this class.
     """
 
     def __init__(self, cap_usd: float, *, clock: Callable[[], str] = _utc_today) -> None:
@@ -126,6 +129,43 @@ class SpendTracker:
             raise ValueError(f"usd must be >= 0, got {usd}")
         current = self.today()
         self._spend = replace(current, usd=current.usd + usd, calls=current.calls + 1)
+
+    def reserve(self, estimated_usd: float) -> float:
+        """Check the cap and immediately hold ``estimated_usd`` against it.
+
+        The pair :meth:`reserve`/:meth:`settle` exists because check-then-record
+        straddles the ``await`` on the provider: every request in flight reads the
+        same pre-call total, so N concurrent requests all pass a cap with room
+        for one. Measured before this existed: 10 concurrent calls against a cap
+        with room for 3 spent 2.56x the cap. Holding the estimate at check time
+        makes the decision and the debit one uninterrupted step.
+
+        Returns the amount held, to be handed back to :meth:`settle`. Raises
+        :class:`SpendCapExceeded` without holding anything when the cap is spent.
+        """
+        if estimated_usd < 0:
+            raise ValueError(f"estimated_usd must be >= 0, got {estimated_usd}")
+        self.check(estimated_usd)
+        current = self.today()
+        self._spend = replace(current, usd=current.usd + estimated_usd)
+        return estimated_usd
+
+    def settle(self, reserved_usd: float, actual_usd: float) -> None:
+        """Swap a reservation for the real cost, counting one call.
+
+        ``actual_usd`` of 0.0 releases the hold — the right answer when the
+        provider failed, when the client vanished mid-stream, or when no usage
+        was reported. Clamped at zero because the UTC-day rollover can reset the
+        counter between the reserve and the settle.
+        """
+        if actual_usd < 0:
+            raise ValueError(f"actual_usd must be >= 0, got {actual_usd}")
+        current = self.today()
+        self._spend = replace(
+            current,
+            usd=max(0.0, current.usd - reserved_usd + actual_usd),
+            calls=current.calls + 1,
+        )
 
     def would_exceed(self, estimated_usd: float = 0.0) -> bool:
         """True when spending ``estimated_usd`` would reach or pass the cap.

@@ -1,0 +1,775 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>قانون العمل القطري — إجابات مستندة إلى النص</title>
+<!-- Rubricated م, in the same red the citations use. The dark variant is the
+     lightened rubric, so the glyph stays legible against dark browser chrome. -->
+<link rel="icon" media="(prefers-color-scheme: light)" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext x='16' y='24' font-size='24' text-anchor='middle' fill='%239e2b25' font-family='serif'%3E%D9%85%3C/text%3E%3C/svg%3E">
+<link rel="icon" media="(prefers-color-scheme: dark)" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext x='16' y='24' font-size='24' text-anchor='middle' fill='%23f0836d' font-family='serif'%3E%D9%85%3C/text%3E%3C/svg%3E">
+<script>
+  // Before first paint: a saved choice that disagrees with the OS would otherwise
+  // show the wrong palette for a frame. The media query covers everyone else.
+  try {
+    var saved = localStorage.getItem("theme");
+    if (saved) document.documentElement.dataset.theme = saved;
+  } catch (e) { /* private mode: fall back to the OS preference */ }
+</script>
+<style>
+  /* المتن والحاشية — the manuscript page. The conversation runs in the matn; the
+     hashiya rail carries the apparatus: the authority for an answer, what is in
+     the corpus, and specimen questions.
+
+     Rubrication throughout: red is what the law said, black is what the model
+     said. The two numbering systems are also a distinction, not an accident —
+     articles carry Western digits because the corpus prints them that way and a
+     reader must be able to match them; turns carry Arabic-Indic digits because
+     that numbering is ours. */
+  :root {
+    --paper:  #fcfbf9;
+    --panel:  #f4f1ec;
+    --ink:    #16130f;
+    --slate:  #6e6a63;
+    --rubric: #9e2b25;
+    --on-rubric: #fff;
+    --rule:   #e3dfd8;
+    /* Firmer than --rule. Hairlines are right for dividing a document; an input
+       needs an edge you can see, or it reads as more background. */
+    --edge:   #cfc9bd;
+
+    --naskh: "Noto Naskh Arabic", "Amiri", "Al Bayan", "Baghdad", "Times New Roman", serif;
+    --sans: "SF Arabic", -apple-system, "Segoe UI", system-ui, sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+
+    /* Scales with the window instead of staying a 320px sliver on a 27" display. */
+    --rail: clamp(300px, 21vw, 400px);
+    /* The reading measure. The app fills the window; the prose does not — a
+       120-character line is unreadable however much room there is. */
+    /* px, not ch: `ch` resolves against each element's own font-size, so the turn,
+       the composer and the hint row each got a different width and none of their
+       edges lined up. One column means one absolute width. */
+    --measure: 720px;
+  }
+  /* The dark palette is declared twice on purpose. CSS has no way to share one
+     block between a media query and an attribute selector, and the alternative —
+     dropping the media query and relying on the toggle alone — would mean a
+     system-dark visitor gets a white flash before any script runs.
+     `:not([data-theme="light"])` is what lets an explicit choice beat the OS. */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:  #14120f;
+      --panel:  #1b1915;
+      --ink:    #ece7dd;
+      --slate:  #9b958a;
+      --rubric: #f0836d;
+      --on-rubric: #241513;
+      --rule:   #302c26;
+      --edge:   #4a443b;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper:  #14120f;
+    --panel:  #1b1915;
+    --ink:    #ece7dd;
+    --slate:  #9b958a;
+    --rubric: #f0836d;
+    --on-rubric: #241513;
+    --rule:   #302c26;
+    --edge:   #4a443b;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: var(--sans); font-size: 16px; line-height: 1.65;
+  }
+  :focus-visible { outline: 2px solid var(--rubric); outline-offset: 2px; }
+  button { font: inherit; color: inherit; }
+
+  /* Full window. This is an application shell, not an article — capping it left
+     wide empty gutters on a large display while the rail stayed pinned narrow. */
+  .page {
+    display: grid; grid-template-columns: minmax(0, 1fr) var(--rail);
+    min-height: 100%;
+  }
+
+  /* ── المتن — the conversation column ──────────────────────────────── */
+  .matn { display: flex; flex-direction: column; min-width: 0; }
+
+  .masthead {
+    display: flex; flex-wrap: wrap; gap: 4px 28px; align-items: baseline;
+    padding: 18px 34px 14px; border-bottom: 1px solid var(--rule);
+  }
+  .wordmark { margin: 0; font-family: var(--naskh); font-size: 19px; font-weight: 700; }
+  .strapline {
+    display: block; font-family: var(--sans); font-size: 11.5px; font-weight: 400;
+    color: var(--slate); direction: ltr; text-align: left; margin-top: 2px;
+  }
+  .gauge {
+    margin: 0 auto 0 0; display: flex; gap: 18px;
+    font-family: var(--mono); font-size: 11px; color: var(--slate); direction: ltr;
+  }
+  .gauge b { color: var(--ink); font-weight: 600; }
+
+  .theme {
+    flex: none; background: none; border: 1px solid var(--rule); border-radius: 3px;
+    padding: 6px 8px; cursor: pointer; color: var(--slate);
+    display: inline-flex; align-items: center;
+  }
+  .theme:hover { color: var(--rubric); border-color: var(--edge); }
+  .theme svg { width: 15px; height: 15px; display: block; }
+  /* Each icon shows the mode you would switch *to*, so only one is ever drawn. */
+  .theme .to-dark { display: block; }
+  .theme .to-light { display: none; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .theme .to-dark { display: none; }
+    :root:not([data-theme="light"]) .theme .to-light { display: block; }
+  }
+  :root[data-theme="dark"] .theme .to-dark { display: none; }
+  :root[data-theme="dark"] .theme .to-light { display: block; }
+
+  .thread { flex: 1; padding: 0 34px; display: flex; flex-direction: column; }
+
+  /* Empty state: the page's one job, stated once, gone after the first question. */
+  /* The conversation is a centred column inside the matn: the shell uses the whole
+     window, the prose keeps its measure, and the input lines up with the text
+     rather than stretching the width of the screen. */
+  /* Turns fill the section, flush with the composer below them. The answer and the
+     box you typed it into now share the same left and right edges. */
+  .welcome { max-width: var(--measure); margin-inline: auto; }
+  /* margin-block auto centres the empty state in the column instead of stranding
+     it at the top of a tall screen. Turns are flex items too, so they still stack
+     from the top once the welcome is gone. */
+  .welcome { margin-block: auto; padding: 0; }
+  .welcome h2 { max-width: 20ch; }
+  .turn { flex: none; }
+  .welcome h2 {
+    font-family: var(--naskh); font-size: clamp(27px, 3.6vw, 40px);
+    font-weight: 700; line-height: 1.4; margin: 0 0 14px;
+  }
+  .welcome h2 em { font-style: normal; color: var(--rubric); }
+  .welcome p { margin: 0; color: var(--slate); font-size: 14.5px; max-width: 34ch; }
+  .page.busy .welcome, .page.answered .welcome { display: none; }
+
+  /* One turn = one exchange. Numbered in the margin because a conversation is a
+     real sequence and the number is how the rail refers back to it. */
+  .turn {
+    display: block; padding: 30px 0; border-bottom: 1px solid var(--rule);
+    cursor: pointer; position: relative;
+  }
+  .turn:last-child { border-bottom: 0; }
+  /* Out of the flow and into the gutter, so the question and answer start flush
+     with the composer's edge below them. A marginal number, as a codex sets it —
+     which is what it always wanted to be; as a grid column it was just indenting
+     every turn away from the edge it should line up with. */
+  .ordinal {
+    position: absolute; inset-inline-start: -23px; top: 33px;
+    font-family: var(--naskh); font-size: 13px; color: var(--slate);
+  }
+  /* Selection is what the rail is keyed to, and the rubricated ordinal says it on
+     its own — a second marker in the same gutter would only crowd it. */
+  .turn.selected .ordinal { color: var(--rubric); font-weight: 700; }
+  /* Capped but not centred: with no auto margin the text still starts flush at the
+     section's edge, so it stays aligned with the composer while the line breaks
+     short of the ~110 characters the full width would otherwise give it. The
+     ragged edge lands on the left, where nothing needs to line up. */
+  .q, .a { max-width: var(--measure); }
+  .q {
+    font-family: var(--naskh); font-size: 18px; font-weight: 700;
+    line-height: 1.6; margin: 0 0 14px;
+  }
+  .a {
+    font-family: var(--sans); font-size: 18.5px; line-height: 1.8;
+    margin: 0; white-space: pre-wrap; min-height: 1.8em;
+  }
+  .a.is-refusal { color: var(--slate); }
+  .a.is-error { color: var(--rubric); }
+  .a.streaming::after {
+    content: ""; display: inline-block; width: 2px; height: .95em;
+    background: var(--rubric); margin-inline-start: 3px; vertical-align: -.1em;
+    animation: blink 1s steps(2) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+  .meta {
+    margin: 14px 0 0; font-family: var(--mono); font-size: 11px;
+    color: var(--slate); direction: ltr; text-align: right;
+    /* flex-end, because this row is direction:ltr so the mono metrics read left to
+       right — which put flex-start on the *left* and stranded the row under the
+       ragged edge of the answer instead of under its flush one. */
+    display: flex; flex-wrap: wrap; gap: 4px 14px; justify-content: flex-end;
+  }
+  .meta .cite-count { color: var(--rubric); cursor: pointer; }
+  .raw { margin-top: 8px; font-family: var(--mono); font-size: 11px; color: var(--slate); }
+  .raw pre {
+    white-space: pre-wrap; word-break: break-all; margin: 6px 0 0;
+    direction: ltr; text-align: left;
+  }
+
+  /* ── the ask bar, pinned to the foot of the column ────────────────── */
+  /* The band is tinted and the field is the lighter surface inside it. The other
+     way round, field and page were one step apart on a warm near-white and melted
+     into each other — the input stopped looking like an input. */
+  .composer {
+    position: sticky; bottom: 0; z-index: 2;
+    padding: 14px 34px 22px; background: var(--panel);
+    border-top: 1px solid var(--edge);
+  }
+  .composer form { display: flex; gap: 12px; align-items: flex-end; }
+  .field {
+    flex: 1; min-width: 0; min-height: 52px; max-height: 30vh; padding: 14px 16px;
+    background: var(--paper); color: var(--ink);
+    font-family: var(--naskh); font-size: 18px; line-height: 1.6;
+    border: 1px solid var(--edge); border-radius: 3px; resize: none;
+  }
+  .field::placeholder { color: var(--slate); opacity: .85; }
+  .go {
+    flex: none; background: var(--rubric); color: var(--on-rubric);
+    border: 0; border-radius: 3px; padding: 15px 26px;
+    font-size: 15px; font-weight: 600; cursor: pointer;
+  }
+  .go:disabled { opacity: .45; cursor: default; }
+  .composer .hint {
+    display: flex; gap: 16px; align-items: center; margin: 9px 0 0;
+    font-size: 12.5px; color: var(--slate);
+  }
+  .composer .toggle { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+  .composer .toggle input { accent-color: var(--rubric); }
+  .keyhint { font-family: var(--mono); font-size: 10.5px; direction: ltr; }
+
+  /* ── الحاشية — the pinned rail ────────────────────────────────────── */
+  .hashiya {
+    border-inline-start: 1px solid var(--rule); background: var(--panel);
+    position: sticky; top: 0; align-self: start; height: 100vh;
+    display: flex; flex-direction: column;
+  }
+  .tabs {
+    display: flex; flex: none; border-bottom: 1px solid var(--rule);
+  }
+  .tab {
+    flex: 1; background: none; border: 0; cursor: pointer;
+    padding: 15px 4px 13px; font-size: 13px; color: var(--slate);
+    border-bottom: 2px solid transparent; margin-bottom: -1px;
+  }
+  .tab:hover { color: var(--ink); }
+  .tab[aria-selected="true"] {
+    color: var(--rubric); border-bottom-color: var(--rubric); font-weight: 600;
+  }
+  .tab .n {
+    font-family: var(--mono); font-size: 10px; margin-inline-start: 4px;
+    direction: ltr; display: inline-block;
+  }
+  .panel { flex: 1; overflow-y: auto; padding: 18px 20px 30px; }
+  .panel[hidden] { display: none; }
+  .panel h3 {
+    margin: 0 0 4px; font-family: var(--mono); font-size: 10px; font-weight: 600;
+    letter-spacing: .09em; text-transform: uppercase; color: var(--slate);
+  }
+  .panel .lede { margin: 0 0 16px; font-size: 12.5px; color: var(--slate); line-height: 1.6; }
+  .panel .none { font-family: var(--naskh); font-size: 15px; color: var(--slate); }
+
+  /* السند — the authority for the selected turn */
+  .articles { margin: 0; padding: 0; list-style: none; }
+  .article { border-bottom: 1px solid var(--rule); }
+  /* top_k is 5 no matter how the tail scored, so a barely-related article still
+     arrives. Showing it is honest; giving it equal weight is not. .48 pushed that
+     past ranking into unreadable — .68 still reads as secondary without making the
+     citation hard to look at, and the score beside it carries the real precision. */
+  .article.is-weak { opacity: .68; }
+  .article summary {
+    display: flex; align-items: baseline; gap: 8px;
+    padding: 10px 0; cursor: pointer; list-style: none;
+  }
+  .article summary::-webkit-details-marker { display: none; }
+  .article summary:hover .num { text-decoration: underline; }
+  .article .chevron { flex: none; font-size: 10px; color: var(--slate); }
+  .article[open] .chevron { transform: rotate(90deg); }
+  .article .num {
+    font-family: var(--naskh); font-size: 16.5px; font-weight: 700;
+    color: var(--rubric); flex: none;
+  }
+  /* The score is the evidence's strength — it earns full ink, not the muted grey
+     used for incidental labels like the doc id. */
+  .article .score {
+    margin-inline-start: auto; flex: none; font-weight: 600;
+    font-family: var(--mono); font-size: 10.5px; color: var(--ink); direction: ltr;
+  }
+  .article .text {
+    font-family: var(--naskh); font-size: 15px; line-height: 1.85;
+    margin: 0; padding: 0 0 14px; white-space: pre-wrap;
+  }
+  .article .doc {
+    display: block; font-family: var(--mono); font-size: 9.5px; color: var(--slate);
+    direction: ltr; text-align: left; padding-bottom: 12px;
+  }
+
+  /* المصادر — what is in the corpus */
+  .sources { margin: 0; padding: 0; list-style: none; }
+  .sources li {
+    display: flex; gap: 10px; justify-content: space-between; align-items: baseline;
+    padding: 9px 0; border-bottom: 1px solid var(--rule);
+  }
+  .sources .law { font-family: var(--naskh); font-size: 14.5px; line-height: 1.5; }
+  .sources .count {
+    flex: none; font-family: var(--mono); font-size: 10px; color: var(--slate); direction: ltr;
+  }
+  .total {
+    display: block; margin-top: 12px; font-family: var(--mono); font-size: 10px;
+    color: var(--slate); direction: ltr; text-align: left;
+  }
+
+  /* أمثلة — specimen questions, with the register they exercise */
+  .specimens { margin: 0; padding: 0; list-style: none; }
+  .specimens li { border-bottom: 1px solid var(--rule); }
+  .specimen {
+    display: block; width: 100%; text-align: right; background: none; border: 0;
+    padding: 11px 0; cursor: pointer;
+    font-family: var(--naskh); font-size: 14.5px; line-height: 1.6;
+  }
+  .specimen:hover { color: var(--rubric); }
+  .specimen .register {
+    display: block; font-family: var(--sans); font-size: 10.5px;
+    color: var(--slate); margin-bottom: 3px;
+  }
+  .specimen:hover .register { color: var(--rubric); }
+
+  .colophon {
+    flex: none; border-top: 1px solid var(--rule); padding: 12px 20px 16px;
+    font-size: 11px; line-height: 1.6; color: var(--slate);
+  }
+  .colophon a { color: var(--slate); }
+
+  /* ── narrow: the rail unpins and follows the conversation ─────────── */
+  @media (max-width: 1000px) {
+    .page { grid-template-columns: 1fr; max-width: 760px; }
+    .hashiya {
+      position: static; height: auto; border-inline-start: 0;
+      border-top: 1px solid var(--rule); order: 3;
+    }
+    .panel { max-height: 60vh; }
+    .masthead, .thread { padding-inline: 22px; }
+    .composer { padding-inline: 22px; order: 2; }
+    .welcome { padding-top: 8vh; }
+    .a { font-size: 17.5px; }
+    /* Gutter is 22px here, not 34px. */
+    .ordinal { inset-inline-start: -16px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .a.streaming::after { animation: none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="page" id="page">
+
+  <div class="matn">
+    <header class="masthead">
+      <h1 class="wordmark">
+        قانون العمل القطري
+        <span class="strapline">Ask in Arabic. Every answer cites its article.</span>
+      </h1>
+      <div class="gauge" id="gauge"></div>
+      <button class="theme" id="theme" type="button" aria-label="بدّل إلى الوضع الداكن">
+        <svg class="to-dark" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" aria-hidden="true">
+          <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>
+        </svg>
+        <svg class="to-light" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="4"/>
+          <path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4"/>
+        </svg>
+      </button>
+    </header>
+
+    <div class="thread" id="thread">
+      <div class="welcome">
+        <h2>اسأل عن حقّك في العمل<br><em>بالفصحى أو بالعامية الخليجية</em></h2>
+        <p>كل جواب يستند إلى مادة من النص، وتجد سندها في الحاشية.</p>
+      </div>
+    </div>
+
+    <div class="composer">
+      <form id="form">
+        <textarea class="field" id="q" rows="1" aria-label="سؤالك عن قانون العمل"
+          placeholder="تعورت وانا بالشغل، منو اللي يدفع حق العلاج؟"></textarea>
+        <button class="go" id="go" type="submit">اسأل</button>
+      </form>
+      <div class="hint">
+        <label class="toggle"><input type="checkbox" id="live" checked> اعرض الجواب أثناء توليده</label>
+        <span class="keyhint">⌘↵</span>
+      </div>
+    </div>
+  </div>
+
+  <aside class="hashiya">
+    <div class="tabs" role="tablist" aria-label="الحاشية">
+      <button class="tab" role="tab" id="tab-sanad" aria-controls="panel-sanad"
+              aria-selected="false">السند<span class="n" id="sanadCount"></span></button>
+      <button class="tab" role="tab" id="tab-sources" aria-controls="panel-sources"
+              aria-selected="false">المصادر</button>
+      <button class="tab" role="tab" id="tab-specimens" aria-controls="panel-specimens"
+              aria-selected="true">أمثلة</button>
+    </div>
+
+    <div class="panel" role="tabpanel" id="panel-sanad" aria-labelledby="tab-sanad" hidden>
+      <h3 id="sanadHead">سند الجواب</h3>
+      <p class="lede" id="sanadLede">اسأل سؤالاً لتظهر المواد التي بُني عليها الجواب.</p>
+      <ol class="articles" id="articles"></ol>
+    </div>
+
+    <div class="panel" role="tabpanel" id="panel-sources" aria-labelledby="tab-sources" hidden>
+      <h3>ما يمكن أن تسأل عنه</h3>
+      <p class="lede">خمسة نصوص قطرية تنظّم العمل. لا شيء خارجها.</p>
+      <!-- Static: the corpus is a committed frozen snapshot (data/corpus/manifest.json).
+           The live chunk/document counts in the masthead come from /stats — if the two
+           ever disagree, trust the masthead, it is reading the database. -->
+      <ol class="sources">
+        <li><span class="law">قانون العمل 14/2004</span><span class="count">164 مادة</span></li>
+        <li><span class="law">المستخدمون في المنازل 15/2017</span><span class="count">24 مادة</span></li>
+        <li><span class="law">لجان فض المنازعات 6/2018</span><span class="count">20 مادة</span></li>
+        <li><span class="law">الإجهاد الحراري 17/2021</span><span class="count">10 مواد</span></li>
+        <li><span class="law">الحد الأدنى للأجور 17/2020</span><span class="count">8 مواد</span></li>
+      </ol>
+      <span class="total">226 مادة · لا شيء غير ذلك</span>
+    </div>
+
+    <div class="panel" role="tabpanel" id="panel-specimens" aria-labelledby="tab-specimens">
+      <h3>أمثلة</h3>
+      <p class="lede">من مجموعة التقييم — الفصحى والخليجية وسؤال خارج النص.</p>
+      <ul class="specimens" id="specimens"></ul>
+    </div>
+
+    <footer class="colophon">
+      النصوص من <a href="https://www.almeezan.qa" rel="noreferrer noopener">الميزان</a> —
+      البوابة القانونية القطرية، وزارة العدل. نسخ غير رسمية، والجواب يولّده نموذج
+      لغوي وقد يخطئ. اقرأ المادة بنفسك.
+    </footer>
+  </aside>
+
+</div>
+
+<script>
+"use strict";
+
+// Verbatim from evals/data/ — the two registers plus one question the corpus
+// genuinely cannot answer.
+const SPECIMENS = [
+  ["فصحى", "كم يوماً مدة الإجازة السنوية التي يستحقها العامل؟"],
+  ["فصحى", "ما الأمور التي يلزم صاحب العمل بتأمينها في موقع العمل لضمان بيئة صحية؟"],
+  ["خليجي", "تعورت وانا بالشغل، منو اللي يدفع حق العلاج؟ وراتبي شلون بينزل لي؟"],
+  ["خليجي", "لو سكروا الشركة شوي عشان فيه خطر على العمال، يوقفون رواتبنا في هالمدة ولا لأ؟"],
+  ["خارج النص", "ما هي نسبة ضريبة الدخل التي تُخصم من أجر العامل في قطر؟"],
+];
+
+// Status codes this service actually returns. Say what happened and what to do;
+// the JSON stays available under تفاصيل الخطأ.
+const FAILURES = {
+  422: "لم نفهم السؤال بهذه الصيغة. اكتبه كسؤال كامل ثم أعد المحاولة.",
+  429: "تجاوزت عدد الأسئلة المسموح بها في الدقيقة. انتظر دقيقة ثم أعد المحاولة.",
+  502: "تعذّر على النموذج الإجابة. أعد المحاولة بعد لحظات.",
+  503: "التوليد متوقف الآن: بلغت الخدمة حدّها اليومي للتكلفة، أو لم يُضبط مفتاح النموذج.",
+};
+
+const AR_DIGITS = "٠١٢٣٤٥٦٧٨٩";
+const arabicNumber = (n) => String(n).replace(/\d/g, (d) => AR_DIGITS[+d]);
+
+const el = (id) => document.getElementById(id);
+const pageEl = el("page"), threadEl = el("thread"), formEl = el("form");
+const qEl = el("q"), goEl = el("go"), liveEl = el("live");
+const articlesEl = el("articles"), sanadLede = el("sanadLede"), sanadCount = el("sanadCount");
+
+const TABS = ["sanad", "sources", "specimens"];
+const turns = [];
+let selected = null;
+
+/* ── rail ─────────────────────────────────────────────────────────── */
+
+function showTab(name, { focus = false } = {}) {
+  for (const t of TABS) {
+    const on = t === name;
+    el(`tab-${t}`).setAttribute("aria-selected", String(on));
+    el(`panel-${t}`).hidden = !on;
+  }
+  if (focus) el(`tab-${name}`).focus();
+}
+
+for (const t of TABS) {
+  el(`tab-${t}`).addEventListener("click", () => showTab(t));
+  el(`tab-${t}`).addEventListener("keydown", (e) => {
+    const i = TABS.indexOf(t);
+    if (e.key === "ArrowLeft") showTab(TABS[(i + 1) % TABS.length], { focus: true });
+    if (e.key === "ArrowRight") showTab(TABS[(i - 1 + TABS.length) % TABS.length], { focus: true });
+  });
+}
+
+for (const [register, question] of SPECIMENS) {
+  const li = document.createElement("li");
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "specimen";
+  b.innerHTML = `<span class="register"></span><span class="qtext"></span>`;
+  b.querySelector(".register").textContent = register;
+  b.querySelector(".qtext").textContent = question;
+  b.addEventListener("click", () => { qEl.value = question; sizeField(); ask(); });
+  li.append(b);
+  el("specimens").append(li);
+}
+
+async function paintGauge() {
+  try {
+    const s = await (await fetch("/stats")).json();
+    el("gauge").innerHTML =
+      `<span><b>${s.corpus.chunks}</b> chunks / ${s.corpus.documents} docs</span>` +
+      `<span><b>${(s.cache.hit_ratio * 100).toFixed(0)}%</b> cached</span>` +
+      `<span><b>$${s.spend.usd.toFixed(4)}</b> / $${s.spend.cap_usd}</span>`;
+  } catch {
+    el("gauge").textContent = "stats unavailable";
+  }
+}
+
+// Corpus excerpts open with their own "المادة N" heading, which the rail already
+// prints. Drop the duplicate, but keep anything else sharing that line — an
+// amendment note (مكرر، اضيفت بموجب…) is legislative history, part of the citation.
+function withoutDuplicateHeading(excerpt, article) {
+  if (article == null) return excerpt;
+  const stripped = excerpt.replace(
+    new RegExp(`^\\s*المادة\\s*${article}(?![\\d\\u0660-\\u0669])\\s*`), ""
+  );
+  return stripped === excerpt ? excerpt : stripped.replace(/^[-–—\s]+/, "");
+}
+
+function paintSanad(turn) {
+  articlesEl.innerHTML = "";
+  const cites = turn?.citations ?? [];
+  sanadCount.textContent = cites.length ? `(${cites.length})` : "";
+  el("sanadHead").textContent = turn ? `سند الجواب ${arabicNumber(turn.n)}` : "سند الجواب";
+  if (!turn) {
+    sanadLede.textContent = "اسأل سؤالاً لتظهر المواد التي بُني عليها الجواب.";
+    return;
+  }
+  sanadLede.textContent = cites.length
+    ? "مرتبة بحسب صلتها بالسؤال. اضغط المادة لقراءة نصها."
+    : "لم تُسترجع أي مادة لهذا السؤال.";
+
+  for (const c of cites) {
+    const li = document.createElement("li");
+    const row = document.createElement("details");
+    // 0.05: below this the reranker is not asserting relevance, it is filling top_k.
+    row.className = (c.score ?? 0) < 0.05 ? "article is-weak" : "article";
+    row.innerHTML =
+      `<summary>
+         <span class="chevron">›</span><span class="num"></span><span class="score"></span>
+       </summary>
+       <p class="text"></p><span class="doc"></span>`;
+    row.querySelector(".num").textContent = `المادة ${c.article ?? "—"}`;
+    row.querySelector(".score").textContent = (c.score ?? 0).toFixed(3);
+    row.querySelector(".text").textContent = withoutDuplicateHeading(c.excerpt, c.article);
+    row.querySelector(".doc").textContent = c.doc_id;
+    li.append(row);
+    articlesEl.append(li);
+  }
+}
+
+function select(turn) {
+  selected = turn;
+  for (const t of turns) t.node.classList.toggle("selected", t === turn);
+  paintSanad(turn);
+}
+
+/* ── thread ───────────────────────────────────────────────────────── */
+
+function addTurn(question) {
+  const n = turns.length + 1;
+  const node = document.createElement("article");
+  node.className = "turn";
+  node.innerHTML =
+    `<div class="ordinal"></div>
+     <div>
+       <p class="q"></p>
+       <p class="a" dir="auto" aria-live="polite"></p>
+       <p class="meta"></p>
+       <details class="raw" hidden><summary>تفاصيل الخطأ</summary><pre></pre></details>
+     </div>`;
+  node.querySelector(".ordinal").textContent = arabicNumber(n);
+  node.querySelector(".q").textContent = question;
+  const turn = {
+    n, node, citations: [],
+    a: node.querySelector(".a"),
+    meta: node.querySelector(".meta"),
+    raw: node.querySelector(".raw"),
+    rawBody: node.querySelector(".raw pre"),
+  };
+  // Clicking a turn re-points the rail at it, so the apparatus always belongs to
+  // an identified question rather than to "the last thing that happened".
+  node.addEventListener("click", (e) => {
+    if (e.target.closest("summary")) return;
+    select(turn);
+  });
+  turns.push(turn);
+  threadEl.append(node);
+  return turn;
+}
+
+function setMeta(turn, parts, citeCount) {
+  turn.meta.innerHTML = "";
+  const text = parts.filter(Boolean).join("  ·  ");
+  if (text) turn.meta.append(document.createTextNode(text));
+  if (citeCount) {
+    const b = document.createElement("span");
+    b.className = "cite-count";
+    b.textContent = `${citeCount} مواد في السند ←`;
+    b.addEventListener("click", (e) => { e.stopPropagation(); select(turn); showTab("sanad"); });
+    turn.meta.append(b);
+  }
+}
+
+/* ── ask ──────────────────────────────────────────────────────────── */
+
+function sizeField() {
+  qEl.style.height = "auto";
+  qEl.style.height = Math.min(qEl.scrollHeight, window.innerHeight * 0.3) + "px";
+}
+qEl.addEventListener("input", sizeField);
+
+async function ask() {
+  const question = qEl.value.trim();
+  if (!question) { qEl.focus(); return; }
+  const streaming = liveEl.checked;
+
+  goEl.disabled = true;
+  pageEl.classList.add("answered");
+  const turn = addTurn(question);
+  select(turn);
+  showTab("sanad");
+  qEl.value = ""; sizeField();
+  turn.node.scrollIntoView({ block: "start" });
+
+  const t0 = performance.now();
+  const finish = (parts) => setMeta(turn, parts, turn.citations.length);
+
+  try {
+    const res = await fetch("/ask", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ question, stream: streaming }),
+    });
+
+    if (!res.ok) {
+      let detail = "";
+      try { detail = JSON.stringify((await res.json()).detail, null, 2); }
+      catch { detail = await res.text(); }
+      turn.a.classList.add("is-error");
+      turn.a.textContent = FAILURES[res.status] ?? `تعذّر تنفيذ الطلب (HTTP ${res.status}).`;
+      turn.rawBody.textContent = `HTTP ${res.status}\n${detail}`;
+      turn.raw.hidden = false;
+      finish([`HTTP ${res.status}`]);
+      return;
+    }
+
+    if (!streaming) {
+      const d = await res.json();
+      turn.a.textContent = d.answer;
+      if (d.refused) turn.a.classList.add("is-refusal");
+      turn.citations = d.citations || [];
+      paintSanad(turn);
+      finish([
+        `${Math.round(d.stages_ms.total)} ms`, d.register,
+        d.cached ? "cached" : `$${d.cost_usd.toFixed(6)}`,
+      ]);
+      return;
+    }
+
+    // The API emits citations before the first token — retrieval finishes in
+    // milliseconds, generation does not. So the rail fills before the answer does.
+    const reader = res.body.getReader(), decoder = new TextDecoder();
+    let buffer = "", tokens = 0;
+    turn.a.classList.add("streaming");
+
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const frames = buffer.split("\n\n");
+      buffer = frames.pop();
+      for (const frame of frames) {
+        let event = "message", data = "";
+        for (const line of frame.split("\n")) {
+          if (line.startsWith("event: ")) event = line.slice(7).trim();
+          else if (line.startsWith("data: ")) data += line.slice(6);
+        }
+        if (!data) continue;
+        const d = JSON.parse(data);
+        if (event === "citations") {
+          turn.citations = d.citations || [];
+          if (selected === turn) paintSanad(turn);
+        } else if (event === "token") {
+          turn.a.textContent += d.text; tokens++;
+        } else if (event === "error") {
+          turn.a.classList.add("is-error");
+          turn.a.textContent += `\n${FAILURES[502]}`;
+          turn.rawBody.textContent = JSON.stringify(d, null, 2);
+          turn.raw.hidden = false;
+        } else if (event === "final") {
+          if (d.refused) turn.a.classList.add("is-refusal");
+          finish([
+            `${Math.round(performance.now() - t0)} ms`, `${tokens} tokens`, d.register,
+            d.cached ? "cached" : (d.cost_usd != null ? `$${d.cost_usd.toFixed(6)}` : null),
+          ]);
+        }
+      }
+    }
+    if (!turn.meta.textContent.includes("ms")) {
+      finish([`${Math.round(performance.now() - t0)} ms`, `${tokens} tokens`]);
+    }
+  } catch (err) {
+    turn.a.classList.add("is-error");
+    turn.a.textContent = "تعذّر الوصول إلى الخدمة. تأكد من أنها تعمل ثم أعد المحاولة.";
+    turn.rawBody.textContent = String(err);
+    turn.raw.hidden = false;
+    finish([]);
+  } finally {
+    turn.a.classList.remove("streaming");
+    goEl.disabled = false;
+    qEl.focus();
+    paintGauge();
+  }
+}
+
+/* ── theme ────────────────────────────────────────────────────────── */
+
+const themeEl = el("theme");
+
+function isDark() {
+  const set = document.documentElement.dataset.theme;
+  if (set) return set === "dark";
+  return matchMedia("(prefers-color-scheme: dark)").matches;
+}
+
+function labelTheme() {
+  themeEl.setAttribute("aria-label", isDark() ? "بدّل إلى الوضع الفاتح" : "بدّل إلى الوضع الداكن");
+}
+
+themeEl.addEventListener("click", () => {
+  const next = isDark() ? "light" : "dark";
+  document.documentElement.dataset.theme = next;
+  try { localStorage.setItem("theme", next); } catch (e) { /* private mode */ }
+  labelTheme();
+});
+// The OS can change under us while the page is open; only follow it if the reader
+// has not made a choice of their own.
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+  if (!document.documentElement.dataset.theme) labelTheme();
+});
+labelTheme();
+
+formEl.addEventListener("submit", (e) => { e.preventDefault(); ask(); });
+qEl.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); ask(); }
+});
+paintGauge();
+sizeField();
+</script>
+</body>
+</html>

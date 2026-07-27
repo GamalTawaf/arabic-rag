@@ -11,7 +11,7 @@ tokens, **checked 2026-07** against the vendors' public pricing pages
 They are keyed by exact model id, including the dated Anthropic snapshot, so a
 model swap fails loudly at construction instead of silently reporting last
 year's cost. Neither table covers cache-read/cache-write discounts or Gemini's
-long-context tier - see the ponytail note on `_lookup_price`.
+long-context tier - see the trade-off note on `_lookup_price`.
 
 **SDK imports live inside methods.** The service must stay importable, and the
 test suite runnable, when only one vendor SDK is installed - and importing
@@ -33,6 +33,7 @@ from app.generation.base import (
     Usage,
     usage_cost_usd,
 )
+from app.generation.budget import CHARS_PER_TOKEN as _CHARS_PER_TOKEN
 
 # model id -> (USD / 1M input tokens, USD / 1M output tokens). Checked 2026-07.
 ANTHROPIC_PRICES: dict[str, tuple[float, float]] = {
@@ -45,11 +46,13 @@ GEMINI_PRICES: dict[str, tuple[float, float]] = {
     "gemini-2.5-flash": (0.30, 2.50),
 }
 
-# ponytail: rough token estimate for a streamed response that carried no usage
-# metadata. ~4 characters per token is the usual English/MSA ballpark and is
-# wrong by tens of percent on Arabic script. Ceiling: cost lines derived from it
-# are indicative, not billable. Upgrade path: count_tokens on the final text.
-CHARS_PER_TOKEN = 4
+#: Re-exported, not redefined. This module used to carry its own
+#: ``CHARS_PER_TOKEN = 4`` ("the usual English ballpark") next to budget.py's
+#: researched Arabic value of 3, so the two halves of the same cost calculation
+#: disagreed by a third — and the one used for *billing* on the degraded path was
+#: the one that admitted in its own comment to being wrong on Arabic. One
+#: constant, defined where its reasoning lives.
+CHARS_PER_TOKEN = _CHARS_PER_TOKEN
 
 
 class AnthropicProvider:
@@ -104,12 +107,21 @@ class AnthropicProvider:
             )
         except Exception as exc:
             raise self._translate(exc) from exc
-        text = "".join(
-            block.text for block in message.content if getattr(block, "type", "") == "text"
-        )
+        # Parsing is inside its own guard, not left bare after the try: the SDK
+        # does not validate, so response shape is a transport failure like any
+        # other and must reach the failover chain as a ProviderError.
+        try:
+            text = "".join(
+                block.text
+                for block in message.content
+                if getattr(block, "type", "") == "text"
+            )
+            usage = self._usage(message.usage.input_tokens, message.usage.output_tokens)
+        except (AttributeError, TypeError, ValueError) as exc:
+            raise _malformed(self.name, exc) from exc
         return Completion(
             text=text,
-            usage=self._usage(message.usage.input_tokens, message.usage.output_tokens),
+            usage=usage,
             provider=self.name,
             model=self.model,
         )
@@ -136,13 +148,21 @@ class AnthropicProvider:
         except Exception as exc:
             raise self._translate(exc) from exc
         if on_usage is not None:
-            on_usage(self._usage(final.usage.input_tokens, final.usage.output_tokens))
+            try:
+                usage = self._usage(
+                    final.usage.input_tokens, final.usage.output_tokens
+                )
+            except (AttributeError, TypeError, ValueError) as exc:
+                raise _malformed(self.name, exc) from exc
+            on_usage(usage)
 
     def _usage(self, input_tokens: int, output_tokens: int) -> Usage:
         return Usage(
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             cost_usd=usage_cost_usd(input_tokens, output_tokens, self._price),
+            provider=self.name,
+            model=self.model,
         )
 
     def _translate(self, exc: Exception) -> ProviderError:
@@ -173,7 +193,7 @@ class GeminiProvider:
     stream chunks and the final chunk normally carries the cumulative totals, but
     that is not contractual: a truncated or error-terminated stream can end with
     none. When that happens `on_usage` reports a character-count *estimate*
-    flagged by the `CHARS_PER_TOKEN` ponytail note above, never a silent zero -
+    flagged by the `CHARS_PER_TOKEN` trade-off note above, never a silent zero -
     an under-reported cost is a cost cap that never fires.
     """
 
@@ -218,9 +238,13 @@ class GeminiProvider:
             text = response.text or ""
         except Exception as exc:
             raise self._translate(exc) from exc
+        try:
+            usage = self._usage_from_metadata(response.usage_metadata, text)
+        except (AttributeError, TypeError, ValueError) as exc:
+            raise _malformed(self.name, exc) from exc
         return Completion(
             text=text,
-            usage=self._usage_from_metadata(response.usage_metadata, text),
+            usage=usage,
             provider=self.name,
             model=self.model,
         )
@@ -264,7 +288,7 @@ class GeminiProvider:
         return self._usage(input_tokens, output_tokens)
 
     def _estimated_usage(self, text: str, input_tokens: int = 0) -> Usage:
-        # ponytail: see CHARS_PER_TOKEN. An estimate is reported rather than a
+        # trade-off: see CHARS_PER_TOKEN. An estimate is reported rather than a
         # zero so the spend cap still moves when usage metadata goes missing.
         return self._usage(input_tokens, len(text) // CHARS_PER_TOKEN)
 
@@ -273,6 +297,8 @@ class GeminiProvider:
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             cost_usd=usage_cost_usd(input_tokens, output_tokens, self._price),
+            provider=self.name,
+            model=self.model,
         )
 
     def _translate(self, exc: Exception) -> ProviderError:
@@ -316,8 +342,33 @@ def available_providers() -> list[str]:
     return keys
 
 
-def _kind_for_status(status: int) -> ErrorKind:
-    """HTTP status -> failover policy. 429 and 5xx are worth another try; 4xx is ours."""
+def _malformed(provider: str, exc: Exception) -> ProviderError:
+    """A 200 whose body is not the shape the SDK promised.
+
+    ``ErrorKind.SERVER``, deliberately, not FATAL: a response that fails to parse
+    is an upstream problem, and FATAL is the one kind that does **not** fail over
+    (``ProviderError.should_fail_over``). Both SDKs parse leniently — anthropic
+    builds models with ``construct_type`` and no validation, so a 200 that omits
+    ``usage`` yields ``message.usage is None`` rather than an SDK error. Left
+    unguarded that surfaced as a bare AttributeError, escaped the taxonomy
+    entirely, and returned a 500 while a healthy backup provider sat unused.
+    """
+    return ProviderError(
+        provider, ErrorKind.SERVER, f"malformed response: {type(exc).__name__}: {exc}"
+    )
+
+
+def _kind_for_status(status: int | None) -> ErrorKind:
+    """HTTP status -> failover policy. 429 and 5xx are worth another try; 4xx is ours.
+
+    ``None`` is accepted because google-genai's ``APIError.code`` is optional —
+    its own ``_get_code`` returns None when the error body carries no status. It
+    maps to SERVER, i.e. retriable: an unclassifiable transport failure must fall
+    through to the next provider rather than escape the taxonomy as a TypeError
+    and bypass failover entirely.
+    """
+    if status is None:
+        return ErrorKind.SERVER
     if status == 429:
         return ErrorKind.RATE_LIMIT
     if status >= 500:
@@ -330,7 +381,7 @@ def _lookup_price(
 ) -> tuple[float, float]:
     """Fail at construction, not at billing time, when a model has no price.
 
-    ponytail: a flat per-model table, so cached input and Gemini's long-context
+    trade-off: a flat per-model table, so cached input and Gemini's long-context
     tier are billed at the standard rate. Ceiling: cost is understated for cache
     hits and overstated past Gemini's 200k threshold. Upgrade path: a per-model
     rate object once the semantic cache reports cache-read tokens.

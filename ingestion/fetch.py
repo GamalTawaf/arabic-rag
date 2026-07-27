@@ -25,7 +25,7 @@ import httpx
 DEFAULT_CORPUS_DIR = Path("data/corpus")
 MANIFEST_NAME = "manifest.json"
 
-# ponytail: almeezan.qa serves its leaf certificate without the DigiCert intermediate,
+# trade-off: almeezan.qa serves its leaf certificate without the DigiCert intermediate,
 # so Python (unlike curl/browsers, which chase the AIA extension) cannot build a chain.
 # Pinning the public intermediate below keeps full verification on. Valid to 2031-03-29;
 # when it expires, replace it from the CA Issuers URI in the server certificate.
@@ -68,7 +68,7 @@ _BLOCK_TAGS = frozenset(
 )
 _SKIP_TAGS = frozenset({"script", "style", "noscript", "head"})
 
-# ponytail: a 30-line HTMLParser instead of beautifulsoup4/trafilatura. Ceiling is
+# trade-off: a 30-line HTMLParser instead of beautifulsoup4/trafilatura. Ceiling is
 # hand-written legal-portal HTML, which is all we fetch. If we ever ingest arbitrary
 # web pages, swap this for trafilatura and delete the marker slicing below.
 

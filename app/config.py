@@ -32,6 +32,15 @@ class Settings(BaseSettings):
     semantic_cache_enabled: bool = True
     semantic_cache_threshold: float = 0.95
 
+    # Access control. Both default to the open/demo setting so a fresh clone runs
+    # with no configuration; both are honestly limited — see the README's
+    # "Security posture" note before pointing anything real at this.
+    # Empty -> /ingest is unauthenticated. Set it and the route requires a
+    # matching `x-api-key` header.
+    ingest_api_key: str = ""
+    # Requests per client IP per minute on /ask; 0 disables the limiter.
+    ask_rate_limit_per_minute: int = 60
+
     anthropic_api_key: str = ""
     google_api_key: str = ""
     openai_api_key: str = ""

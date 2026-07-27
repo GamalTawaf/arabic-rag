@@ -191,7 +191,7 @@ async def run_config(
 
 
 def _percentile(values: Sequence[float], pct: float) -> float:
-    """Nearest-rank percentile. ponytail: no interpolation, n is a few hundred."""
+    """Nearest-rank percentile. trade-off: no interpolation, n is a few hundred."""
     if not values:
         return 0.0
     ordered = sorted(values)

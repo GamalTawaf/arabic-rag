@@ -1,5 +1,9 @@
 # Optional: local embedding + reranker models for the benchmark.
 # Heavy (torch). Only needed to run benchmark/ with local models.
-sentence-transformers
-openai
-cohere
+# torch itself is NOT listed here: it has to come from the CPU wheel index with
+# the `+cpu` local version, so both Dockerfiles install `torch==2.13.0+cpu`
+# explicitly before this file. See the comment in Dockerfile.
+# Pinning rationale: see requirements.txt.
+sentence-transformers==5.6.1
+openai==2.48.0
+cohere==7.0.8

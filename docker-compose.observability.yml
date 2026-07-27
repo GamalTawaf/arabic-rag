@@ -8,7 +8,7 @@
 # about both. Running uvicorn on the host instead works too — prometheus.yml
 # also scrapes host.docker.internal:8000. See dashboards/README.md.
 #
-# ponytail: the Grafana provisioning YAML lives inline as compose `configs`
+# trade-off: the Grafana provisioning YAML lives inline as compose `configs`
 # rather than as two more files on disk. Two four-line YAMLs that exist only to
 # be bind-mounted are worth less than one file you can read top to bottom.
 # Ceiling: `content:` needs Compose >= 2.23 (verified on v5.1.4).

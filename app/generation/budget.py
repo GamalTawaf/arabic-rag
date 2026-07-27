@@ -13,7 +13,7 @@ from collections.abc import Sequence
 
 from app.retrieval.search import Hit
 
-# ponytail: Arabic runs about 3 characters per token on the Claude and Gemini
+# trade-off: Arabic runs about 3 characters per token on the Claude and Gemini
 # tokenizers (a 4-letter word plus its space is typically one or two tokens),
 # so length/3 is within ~10% and always rounds up. No tiktoken: it is the wrong
 # tokenizer for both providers, it is a dependency and a model download, and the
@@ -74,7 +74,7 @@ def fit_context(
 
     Returns ``(kept hits in original order, tokens used)``.
 
-    # ponytail: stops at the first chunk that does not fit instead of skipping
+    # trade-off: stops at the first chunk that does not fit instead of skipping
     # it and trying smaller lower-ranked ones. Keeping the prefix means the
     # context is always the top-N by rank, which is what the eval measures.
     # Upgrade path if chunk sizes ever get very uneven: continue past the

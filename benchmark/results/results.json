@@ -1286,7 +1286,7 @@
   "planning": {
     "measured_at": "2026-07-25T08:42:59+00:00",
     "git_commit": "6fe6917",
-    "method": "Gulf->MSA query-rewrite ablation. Split: the 50 answerable Gulf pairs from evals/data/eval_pairs.jsonl, dense retrieval only, identical ground truth across arms. Rewriter: app.planning.dialect.gulf_to_msa, a hand-written ~30-entry lexicon plus normalization -- no model, no API key, no network; it changed 49 of the 50 questions. Arms: raw (question as typed), rewritten (MSA rewrite instead), fused (both queries retrieved and RRF-fused, which is what RuleBasedPlanner ships). Each leg retrieves 10 candidates; recall@3/recall@10/MRR computed over the top 10. n=50, so one pair is two points and the Wilson interval is roughly +/-8 to +/-10 points: direction is trustworthy, magnitude is not.",
+    "method": "Gulf->MSA query-rewrite ablation. Split: the 50 answerable Gulf pairs from evals/data/eval_pairs.jsonl, dense retrieval only, identical ground truth across arms. Rewriter: app.planning.dialect.gulf_to_msa, a hand-written 77-entry lexicon plus normalization -- no model, no API key, no network; it changed 49 of the 50 questions. Arms: raw (question as typed), rewritten (MSA rewrite instead), fused (both queries retrieved and RRF-fused, which is what RuleBasedPlanner ships). Each leg retrieves 10 candidates; recall@3/recall@10/MRR computed over the top 10. n=50, so one pair is two points and the Wilson interval is roughly +/-8 to +/-10 points: direction is trustworthy, magnitude is not.",
     "split": "gulf answerable",
     "n_pairs": 50,
     "n_rewritten": 49,

@@ -28,13 +28,7 @@ is a serious one. So :func:`recommend` does **not** maximise F1, which weighs
 them identically — see its docstring, and docs/refusal-calibration.md for the
 measured result and what it argues for.
 
-# ponytail: this file is ~890 lines, over the repo's 800 ceiling. It holds four
-# things — pure metrics, the score cache, the expensive scorer/auditor, and a
-# renderer + CLI — and the clean split is ``evals/refusal_report.py`` for the last
-# two, which would leave ~500 here. Not done because a second module was outside
-# this change's remit; do it the next time this file is touched.
-#
-# ponytail: the retrieval path here is a re-implementation of the four stages
+# trade-off: the retrieval path here is a re-implementation of the four stages
 # ``RagService._prepare`` runs before the gate, because ``_prepare`` also does a
 # cache lookup, prompt assembly and a spend check, none of which may influence a
 # calibration. The duplication is the trade, and it is guarded: this module
@@ -61,6 +55,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.models.chunks import EMBEDDING_COLUMNS
+from app.planning.planner import Planner
+from app.retrieval.embed import Embedder
+from app.retrieval.rerank import Reranker
 from app.retrieval.search import (
     Hit,
     dense_search,
@@ -423,6 +420,35 @@ def load_scores(path: Path) -> tuple[list[tuple[str, bool, float]], dict]:
 # --------------------------------------------------------------------------- #
 
 
+def _reranks(config: str) -> bool:
+    """Whether ``config`` runs the cross-encoder, per ``RagService._rerank``."""
+    return config.endswith("+rerank") and settings.rerank_enabled
+
+
+def _check_config(config: str) -> str:
+    """Reject a config this calibration cannot speak about. Mirrors the peers.
+
+    ``benchmark.replay``, ``evals.gate`` and ``evals.harness`` all validate their
+    ``--config``; this module did not, and ``_search`` falls through to
+    ``hybrid_search`` for anything unrecognised — so a typo like ``hybrd+rerank``
+    silently calibrated a different pipeline and then stamped the bogus string
+    into the committed scores file as provenance.
+    """
+    from app.service import CONFIGS
+
+    if config not in CONFIGS:
+        raise ValueError(
+            f"unknown retrieval config {config!r}; expected one of {list(CONFIGS)}"
+        )
+    if not _reranks(config):
+        raise ValueError(
+            f"config {config!r} does not run the cross-encoder, so there is no "
+            "rerank score to calibrate rerank_min_score against "
+            f"(rerank_enabled={settings.rerank_enabled}). Use a '+rerank' config."
+        )
+    return config
+
+
 async def _search(
     session: AsyncSession,
     config: str,
@@ -444,9 +470,9 @@ async def _search(
 async def _context(
     pairs: Sequence[EvalPair],
     session: AsyncSession,
-    embedder: Any,
-    reranker: Any,
-    planner: Any,
+    embedder: Embedder,
+    reranker: Reranker,
+    planner: Planner,
     config: str,
     top_k_retrieve: int,
     top_k_context: int,
@@ -479,9 +505,20 @@ async def _context(
             if len(ranked_lists) == 1
             else rrf_fuse(ranked_lists, limit=top_k_retrieve)
         )
-        contexts.append(
-            await reranker.rerank(plan.rewritten or plan.original, fused, top_k=top_k_context)
-        )
+        # Gated exactly as ``RagService._rerank`` gates it. Unconditional
+        # reranking here would sweep a score the service never computes for
+        # dense/lexical/hybrid — and for those configs ``_is_refusal`` does not
+        # even reach the threshold comparison, because it first checks
+        # ``hit.source == RERANK_SOURCE``. The swept number has to be the number
+        # the service compares, or the calibration is of a pipeline nobody runs.
+        if _reranks(config):
+            contexts.append(
+                await reranker.rerank(
+                    plan.rewritten or plan.original, fused, top_k=top_k_context
+                )
+            )
+        else:
+            contexts.append(fused[:top_k_context])
         if progress is not None and index % 25 == 0:
             print(f"  scored {index}/{len(pairs)} pairs", file=progress, flush=True)
     return contexts
@@ -490,9 +527,9 @@ async def _context(
 async def score_pairs(
     pairs: Sequence[EvalPair],
     session: AsyncSession,
-    embedder: Any,
-    reranker: Any,
-    planner: Any,
+    embedder: Embedder,
+    reranker: Reranker,
+    planner: Planner,
     config: str = DEFAULT_CONFIG,
     *,
     top_k_retrieve: int = settings.top_k_retrieve,
@@ -537,9 +574,9 @@ class RefusedPair:
 async def audit_refused(
     pairs: Sequence[EvalPair],
     session: AsyncSession,
-    embedder: Any,
-    reranker: Any,
-    planner: Any,
+    embedder: Embedder,
+    reranker: Reranker,
+    planner: Planner,
     config: str = DEFAULT_CONFIG,
     *,
     top_k_retrieve: int = settings.top_k_retrieve,
@@ -715,7 +752,7 @@ def _relative(path: Path) -> Path:
         return Path(path)
 
 
-def _collaborators(model_key: str) -> tuple[Any, Any, Any]:
+def _collaborators(model_key: str) -> tuple[Embedder, Reranker, Planner]:
     """(embedder, reranker, planner) — the service's own, imported here so that
     importing this module loads no model."""
     from app.deps import SERVICE_PLANNER, SERVICE_RERANKER
@@ -730,6 +767,7 @@ async def _run(args: argparse.Namespace, pairs: Sequence[EvalPair], *, audit: bo
     """One pass of the expensive path over ``pairs``: scores, or the refusal audit."""
     from app.db import SessionLocal, engine
 
+    _check_config(args.config)  # before the models load, not after
     verb = "auditing" if audit else "scoring"
     print(
         f"{verb} {len(pairs)} pairs through {args.config} (model={args.model}) "

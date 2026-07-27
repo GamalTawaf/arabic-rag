@@ -21,7 +21,7 @@ terraform {
     }
   }
 
-  # ponytail: local state on purpose. This stack lives for the length of a demo;
+  # trade-off: local state on purpose. This stack lives for the length of a demo;
   # a GCS remote-state bucket would be the one resource that survives the
   # `terraform destroy` this whole design exists to make cheap. Upgrade path if
   # more than one person ever applies it: uncomment and create the bucket by hand.

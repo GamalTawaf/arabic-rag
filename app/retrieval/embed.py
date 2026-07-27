@@ -11,7 +11,7 @@ measurable recall without it, and Cohere embed-v4 wants
 `input_type=search_query` vs `search_document`. BGE-m3 and OpenAI take neither,
 so the asymmetry has to live per-model instead of in the caller.
 
-ponytail: torch / sentence_transformers are imported inside the methods that need
+trade-off: torch / sentence_transformers are imported inside the methods that need
 them. The FastAPI service and the test suite must stay importable without a
 2 GB ML stack loaded. Ceiling: the first local query pays the model load.
 """
@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import math
+import threading
 from typing import Any, Protocol
 
 import httpx
@@ -67,7 +68,7 @@ class Embedder(Protocol):
 class _IngestCompat:
     """`ingestion.pipeline.Embedder` calls `embed()`; it only ever embeds corpus text.
 
-    ponytail: an alias instead of touching pipeline.py, whose protocol predates the
+    trade-off: an alias instead of touching pipeline.py, whose protocol predates the
     query/passage split. Ceiling: a caller could embed a *query* through it and
     silently get the passage prefix. Upgrade path: widen pipeline's protocol to
     `embed_passages` and delete this.
@@ -91,14 +92,21 @@ class LocalEmbedder(_IngestCompat):
         self.dim = EMBEDDING_DIMS[model_key]
         self.query_prefix, self.passage_prefix = PREFIXES[model_key]
         self._model: Any = None
+        self._load_lock = threading.Lock()
 
     def load(self) -> Any:
-        """Load the model once (first call pays ~10s + weights) and cache it."""
-        if self._model is None:
-            from sentence_transformers import SentenceTransformer
+        """Load the model once (first call pays ~10s + weights) and cache it.
 
-            self._model = SentenceTransformer(self.model_name, device=_device())
-        return self._model
+        Locked: two concurrent cold-start requests would otherwise both see
+        `_model is None` and build two copies of a multi-GB model. The lock is
+        held for the whole load because it is paid once per process.
+        """
+        with self._load_lock:
+            if self._model is None:
+                from sentence_transformers import SentenceTransformer
+
+                self._model = SentenceTransformer(self.model_name, device=_device())
+            return self._model
 
     async def embed_passages(self, texts: list[str]) -> list[list[float]]:
         return await self._encode(texts, self.passage_prefix)
@@ -106,18 +114,21 @@ class LocalEmbedder(_IngestCompat):
     async def embed_queries(self, texts: list[str]) -> list[list[float]]:
         return await self._encode(texts, self.query_prefix)
 
-    async def _encode(self, texts: list[str], prefix: str) -> list[list[float]]:
-        if not texts:
-            return []
-        model = self.load()
-        # to_thread: encode() is blocking and the service embeds queries per request.
-        vectors = await asyncio.to_thread(
-            model.encode,
+    def _load_and_encode(self, texts: list[str], prefix: str) -> Any:
+        """Blocking: loads weights on first call and runs the forward pass."""
+        return self.load().encode(
             [prefix + text for text in texts],
             batch_size=ST_BATCH,
             normalize_embeddings=True,
             show_progress_bar=False,
         )
+
+    async def _encode(self, texts: list[str], prefix: str) -> list[list[float]]:
+        if not texts:
+            return []
+        # to_thread: both the ~10s first-call weight load and encode() are
+        # blocking, and the service embeds queries on the request path.
+        vectors = await asyncio.to_thread(self._load_and_encode, texts, prefix)
         return _check_dims([[float(x) for x in row] for row in vectors], self.model_key)
 
 

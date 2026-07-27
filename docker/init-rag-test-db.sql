@@ -6,9 +6,9 @@
 --
 -- Without this file a clean clone is worse than broken, it is quietly
 -- incomplete: conftest's pg_url fixture calls pytest.skip() when it cannot
--- connect, so `pytest` reports "389 passed, 153 skipped" and exits 0. Every
+-- connect, so `pytest` reports "409 passed, 167 skipped" and exits 0. Every
 -- database-backed test — search, chunk model, ingestion pipeline, the /ask and
--- /stats endpoints — is in those 153.
+-- /stats endpoints — is in those 167.
 --
 -- Runs once, on an empty data volume only (docker-entrypoint-initdb.d). If the
 -- volume already exists, create it by hand instead:

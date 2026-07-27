@@ -79,9 +79,12 @@ _INTERROGATIVE_STEMS = (
     "كم", "ماذا", "ما", "من", "متى", "متي", "أين", "اين", "كيف", "لماذا", "هل",
     "شكثر", "شنو", "شلون", "منو", "وين", "ليش", "ش",
 )
+# ``\b`` after the stem is load-bearing: without it the one-letter stem "ش"
+# (there for "وش") matches the start of any ordinary word beginning with ش, so
+# "الأجر وشروط العمل" ("pay and conditions of work") split into two clauses.
 _CLAUSE_BOUNDARY = re.compile(
     r"[؟?،]\s*(?=و)"  # "... ؟ ومتى ..." / "... ، ومتى ..."
-    r"|\s+(?=و(?:" + "|".join(_INTERROGATIVE_STEMS) + r"))"  # "... وكم ..."
+    r"|\s+(?=و(?:" + "|".join(_INTERROGATIVE_STEMS) + r")\b)"  # "... وكم ..."
 )
 _SENTENCE_END = re.compile(r"[؟?]+")
 
@@ -100,14 +103,27 @@ _INTERROGATIVE_TOKENS = frozenset(
 )
 _WORD = re.compile(r"\w+")
 
+#: The two single-letter conjunctions Arabic glues to the next word: و ("and")
+#: and ف ("so/then"). Only these may be stripped when looking for a glued-on
+#: interrogative — see :func:`_interrogatives`.
+_PROCLITIC_CONJUNCTIONS = frozenset({"و", "ف"})
+
 
 def _interrogatives(segment: str) -> set[str]:
     from ingestion.normalize import normalize_query
 
     tokens = {normalize_query(token) for token in _WORD.findall(segment)}
     found = tokens & _INTERROGATIVE_TOKENS
-    # "وكم"/"ومتى" — the conjunction is glued on; count the stem.
-    found |= {token[1:] for token in tokens if token[1:] in _INTERROGATIVE_TOKENS}
+    # "وكم"/"فماذا" — a proclitic conjunction is glued on; count the stem.
+    # Restricted to the two single-letter conjunctions. Stripping the first
+    # letter of *every* token turned ordinary words into interrogatives, most
+    # damagingly حكم ("ruling", which this corpus is full of) → كم ("how many"),
+    # inventing a second question and splitting the query.
+    found |= {
+        token[1:]
+        for token in tokens
+        if token[:1] in _PROCLITIC_CONJUNCTIONS and token[1:] in _INTERROGATIVE_TOKENS
+    }
     return found
 
 
@@ -120,7 +136,7 @@ def decompose(question: str) -> list[str]:
     query (same interrogative, one topic) while "منو اللي يدفع؟ وراتبي شلون ينزل؟"
     becomes two.
 
-    # ponytail: this catches the obvious two-part case and nothing else — no
+    # trade-off: this catches the obvious two-part case and nothing else — no
     # coreference resolution ("وهل يشمل ذلك...?" keeps its dangling pronoun), no
     # implicit conjunction, no three-way splits beyond what the boundary regex
     # happens to produce. Real decomposition needs an LLM; that is LLMPlanner's
@@ -251,12 +267,16 @@ class RuleBasedPlanner:
         )
 
 
-_PROMPT = """أنت مساعد يعيد صياغة أسئلة قانون العمل القطري للبحث في نص عربي فصيح.
+_SYSTEM = """أنت مساعد يعيد صياغة أسئلة قانون العمل القطري للبحث في نص عربي فصيح.
 أعد كائن JSON فقط، بلا أي شرح، بهذا الشكل:
-{{"rewritten": "<السؤال بالفصحى>", "sub_queries": ["<سؤال فرعي>", ...]}}
-اترك sub_queries فارغة إذا كان السؤال يسأل عن شيء واحد.
+{"rewritten": "<السؤال بالفصحى>", "sub_queries": ["<سؤال فرعي>", ...]}
+اترك sub_queries فارغة إذا كان السؤال يسأل عن شيء واحد."""
 
-السؤال: {question}"""
+_PROMPT = "السؤال: {question}"
+
+#: A plan is two short strings; the default 1024 would only ever pay for tokens
+#: the parser throws away.
+_PLANNER_MAX_TOKENS = 512
 
 _JSON_OBJECT = re.compile(r"\{.*\}", re.DOTALL)
 
@@ -281,24 +301,28 @@ class LLMPlanner:
     approximates offline — which is why the rule-based path is the one that was
     actually measured.
 
-    ``provider`` is duck-typed on purpose: ``app.generation`` is the owner of the
-    ``Provider`` protocol, and this module only needs one prompt-in/text-out call
-    from it.
+    ``provider`` is an :class:`app.generation.base.Provider`. It is imported
+    lazily rather than at module scope so this module stays importable without
+    the vendor SDKs, but the *call* follows that protocol exactly — an earlier
+    version duck-typed it and silently never worked (see :func:`_load_provider`).
     """
 
     strategy = "llm"
 
     def __init__(self, provider: Any | None = None) -> None:
         self._provider = provider if provider is not None else _load_provider()
-        self._complete = _resolve_complete(self._provider)
         self._fallback = RuleBasedPlanner()
 
     async def plan(self, question: str) -> Plan:
         original = question.strip()
         register = detect_register(original)
         try:
-            raw = await self._complete(_PROMPT.format(question=original))
-            parsed = _extract_json(raw)
+            completion = await self._provider.complete(
+                _SYSTEM,
+                [{"role": "user", "content": _PROMPT.format(question=original)}],
+                max_tokens=_PLANNER_MAX_TOKENS,
+            )
+            parsed = _extract_json(completion.text)
         except (ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
             # Not swallowed: logged with the reason, and the returned Plan says
             # "rules" so a caller reading strategy sees the LLM did not run.
@@ -321,38 +345,29 @@ class LLMPlanner:
 
 
 def _load_provider() -> Any:
-    """Build the default generation provider, or explain why there isn't one."""
+    """Build the same failover chain ``/ask`` generates with, or explain why not.
+
+    This used to call ``get_provider()`` with no argument against
+    ``get_provider(name: str)``, and the resulting TypeError was caught and
+    re-labelled "set ANTHROPIC_API_KEY" — so LLMPlanner could never run, and said
+    so in a way that sent the reader after a key that was already set. It builds
+    ``FailoverProvider.from_settings()``, exactly as ``app.deps.build_provider``
+    does, so the planner and the answer come from the same configured chain.
+    """
     try:
-        from app.generation import get_provider
+        from app.generation.failover import FailoverProvider
     except ImportError as exc:
         raise PlannerUnavailable(
-            "LLMPlanner needs app.generation.get_provider; generation is not wired up yet. "
+            "LLMPlanner needs app.generation; generation is not wired up yet. "
             "Use get_planner('rules') for the offline path."
         ) from exc
     try:
-        return get_provider()
+        return FailoverProvider.from_settings()
     except Exception as exc:
         raise PlannerUnavailable(
             f"LLMPlanner has no usable generation provider ({exc}). Set ANTHROPIC_API_KEY "
             "or GOOGLE_API_KEY, or use get_planner('rules')."
         ) from exc
-
-
-def _resolve_complete(provider: Any):
-    """Find the provider's prompt-in/text-out method.
-
-    # ponytail: two names accepted because app.generation owns that protocol and
-    # this module must not import-couple to its exact spelling. Ceiling: a third
-    # name silently fails here instead of at the type checker. Upgrade path: once
-    # generation is settled, replace this with a plain `provider.complete` call.
-    """
-    for name in ("complete", "generate"):
-        method = getattr(provider, name, None)
-        if callable(method):
-            return method
-    raise PlannerUnavailable(
-        f"provider {type(provider).__name__} exposes neither complete() nor generate()"
-    )
 
 
 def get_planner(strategy: str = "rules") -> Planner:

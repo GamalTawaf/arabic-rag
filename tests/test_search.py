@@ -363,3 +363,16 @@ async def test_hybrid_search_works_when_one_leg_finds_nothing(db_session):
 
     # Assert
     assert [hit.chunk_id for hit in hits] == ["law:1:0"]
+
+
+async def test_hybrid_search_propagates_a_failing_leg_without_leaking(db_session, recwarn):
+    # Arrange — a short query_vec makes the dense leg raise while lexical still runs.
+    await seed(db_session, make_chunk("law:1:0", WAGES_TEXT, emb_e5=unit_vector(0)))
+
+    # Act / Assert — the real error surfaces, not an "operation on closed session"
+    with pytest.raises(ValueError, match="dims"):
+        await hybrid_search(db_session, "الأجر", [1.0, 0.0], "e5")
+
+    # And the sibling leg finished on a live session rather than being torn out
+    # from under itself, so nothing warns about an unawaited or orphaned task.
+    assert [str(w.message) for w in recwarn] == []

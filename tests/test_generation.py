@@ -32,6 +32,7 @@ from app.generation.base import (
 from app.generation.failover import AllProvidersFailed, FailoverProvider
 from app.generation.providers import (
     ANTHROPIC_PRICES,
+    CHARS_PER_TOKEN,
     GEMINI_PRICES,
     AnthropicProvider,
     GeminiProvider,
@@ -488,7 +489,7 @@ async def test_gemini_stream_without_usage_metadata_estimates_rather_than_zero()
     [c async for c in provider.stream(SYSTEM, MESSAGES, on_usage=seen.append)]
 
     # Assert
-    assert seen[0].output_tokens == 10  # 40 chars / CHARS_PER_TOKEN
+    assert seen[0].output_tokens == 40 // CHARS_PER_TOKEN  # derived, not hardcoded
     assert seen[0].cost_usd > 0  # never a silent zero - the spend cap must move
 
 
@@ -499,6 +500,9 @@ async def test_gemini_stream_without_usage_metadata_estimates_rather_than_zero()
         (genai_errors.ServerError(503, {"error": {"message": "down"}}), ErrorKind.SERVER),
         (genai_errors.ClientError(400, {"error": {"message": "bad"}}), ErrorKind.FATAL),
         (genai_errors.ClientError(403, {"error": {"message": "denied"}}), ErrorKind.FATAL),
+        # `code` is Optional in google-genai: an error body with no status leaves
+        # it None. It must classify as retriable, not crash the taxonomy.
+        (genai_errors.APIError(None, {"error": {"message": "no status"}}), ErrorKind.SERVER),
     ],
 )
 async def test_gemini_translates_api_errors_to_kinds(exc, kind):
@@ -559,7 +563,7 @@ async def test_gemini_estimates_when_metadata_reports_zero_output_tokens():
 
     # Assert
     assert completion.usage.input_tokens == 99  # the count we did get is kept
-    assert completion.usage.output_tokens == 5  # 20 chars / CHARS_PER_TOKEN
+    assert completion.usage.output_tokens == 20 // CHARS_PER_TOKEN
     assert completion.usage.cost_usd > 0
 
 

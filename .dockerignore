@@ -1,7 +1,51 @@
-.git
-.venv
-venv
-__pycache__
-.pytest_cache
+# The build context is ~1 GB, almost all of it .venv. Everything excluded here
+# is either rebuilt inside the image, useless to a running service, or a secret.
+#
+# What the runtime genuinely needs, and why it is NOT listed:
+#   app/                  the service
+#   ingestion/            imported by app.ingest_worker on the /ingest path
+#   data/                 the corpus, for `python -m ingestion ingest`
+#   alembic/, alembic.ini `alembic upgrade head` before first boot
+#   requirements*.txt     read by the builder stage
+
+# Virtualenvs — 1 GB of host-platform wheels that must never reach a linux image
+.venv/
+venv/
+env/
+
+# VCS and CI
+.git/
+.gitignore
+.github/
+
+# Python build/test litter
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Secrets. .env.example is kept — it is documentation.
 .env
-tests
+.env.*
+!.env.example
+
+# Not part of the service: measurement, infrastructure and prose. Excluding
+# these also stops a rebuild busting the COPY layer every time a benchmark
+# number or a README line changes.
+tests/
+benchmark/
+evals/
+docs/
+terraform/
+dashboards/
+docker/
+docker-compose*.yml
+Dockerfile*
+*.md
+
+# macOS
+.DS_Store

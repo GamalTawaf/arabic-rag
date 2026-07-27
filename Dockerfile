@@ -15,7 +15,7 @@ COPY requirements.txt requirements-models.txt ./
 ## version number when sentence-transformers pulls torch in as a dependency. Installing
 ## CPU torch in a separate earlier step does NOT work: a --prefix install is invisible to
 ## the next pip run's resolver, which then reinstalls the CUDA build over it (measured:
-## 9 GB image instead of 3 GB).
+## a 9 GB image instead of the 2.06 GB the CPU wheels build).
 RUN pip install --upgrade pip \
  && pip install --prefix=/install \
       --extra-index-url https://download.pytorch.org/whl/cpu \
@@ -27,11 +27,24 @@ ENV PYTHONUNBUFFERED=1
 ## Weights land here. Left OUT of the image on purpose: bge-m3 + the cross-encoder are
 ## ~4.4 GB, which triples the image and slows every deploy, so they download on first
 ## use instead. The cost is a slow first request after a scale-to-zero cold start.
-## ponytail: fine for an ephemeral demo. To trade image size for cold-start latency,
+## trade-off: fine for an ephemeral demo. To trade image size for cold-start latency,
 ## add a build step here that runs SentenceTransformer("BAAI/bge-m3") to bake them in.
 ENV HF_HOME=/app/.cache/huggingface
 WORKDIR /app
 COPY --from=builder /install /usr/local
 COPY . .
+## Non-root. `appuser` needs a writable /app because HF_HOME points inside it and
+## sentence-transformers downloads ~4.4 GB of weights there on the first request.
+RUN useradd --create-home --uid 10001 appuser \
+ && mkdir -p "$HF_HOME" \
+ && chown -R appuser:appuser /app
+USER appuser
 EXPOSE 8000
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+## --proxy-headers: Cloud Run terminates TLS and puts the caller in
+## X-Forwarded-For. Without this uvicorn reports the front end's address, and
+## /ask's per-IP rate limit degrades into one shared bucket for every user.
+## --forwarded-allow-ips=*: the only peer that can reach this container is the
+## platform front end, so there is no untrusted hop to distrust. Behind any
+## other proxy, narrow it to that proxy's address.
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", \
+     "--proxy-headers", "--forwarded-allow-ips", "*"]

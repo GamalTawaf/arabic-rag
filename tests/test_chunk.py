@@ -159,3 +159,70 @@ def test_empty_article_bodies_are_dropped():
 
     # Assert
     assert [chunk.article for chunk in chunks] == ["1"]
+
+
+# ------------------------------------------------- decorated headings & blobs
+
+
+def test_article_headings_are_found_through_tatweel_and_harakat():
+    """Regression: the scan ran on RAW text while the regex tolerated only a shadda.
+
+    A decorated heading was invisible, which does not merely lose a boundary —
+    the whole article merges into the previous one and is then cited under the
+    PREVIOUS article's number. The committed corpus carries 288 diacritic
+    codepoints, so this is the normal case.
+    """
+    # Arrange — tatweel in the second heading, harakat in the third
+    text = (
+        "المادة 1\nيسري هذا القانون على جميع العمال.\n\n"
+        "المــادة 2\nمدة الإخطار شهر واحد.\n\n"
+        "المَادة 3\nيستحق العامل إجازة سنوية.\n"
+    )
+
+    # Act
+    chunks = chunk_document("qatar-labour-law-14-2004", text)
+
+    # Assert — three articles, each under its own number
+    assert [chunk.article for chunk in chunks] == ["1", "2", "3"]
+    assert "شهر واحد" in chunks[1].text
+    assert "إجازة سنوية" in chunks[2].text
+
+
+def test_chunk_text_keeps_the_original_decoration_verbatim():
+    """The scan is folded; the stored text must not be — it is what gets cited."""
+    # Arrange
+    text = "المــادة 2\nمدة الإخطار شهر واحد.\n"
+
+    # Act
+    chunks = chunk_document("d", text)
+
+    # Assert
+    assert chunks[0].text.startswith("المــادة")
+
+
+def test_an_unbroken_run_longer_than_the_budget_is_split_not_dropped():
+    """Regression: `_next_word_start` skipped the remainder of a whitespace-free run.
+
+    Measured on a 5000-char blob: 3600 characters vanished, unretrievable and
+    uncitable, while IngestStats still reported success.
+    """
+    # Arrange — a base64/URL-shaped blob with no whitespace at all
+    blob = "A" * 5000
+
+    # Act
+    chunks = chunk_document("d", blob, max_chars=1400, overlap_chars=150)
+
+    # Assert — every character survives, in order
+    assert "".join(chunk.text for chunk in chunks) == blob
+
+
+def test_a_long_blob_inside_normal_prose_still_keeps_everything():
+    # Arrange
+    text = "المادة 1\n" + "B" * 3000 + "\nنص عادي بعد الكتلة.\n"
+
+    # Act
+    chunks = chunk_document("d", text, max_chars=1400, overlap_chars=150)
+
+    # Assert
+    assert "B" * 3000 in "".join(chunk.text for chunk in chunks)
+    assert "نص عادي بعد الكتلة." in chunks[-1].text

@@ -45,6 +45,7 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import math
+import threading
 from collections.abc import Sequence
 from functools import cache
 from typing import Protocol
@@ -90,6 +91,7 @@ class CrossEncoderReranker:
         self.model_name = model_name
         self.max_length = max_length
         self._model = None
+        self._load_lock = threading.Lock()
 
     def _build_model(self):
         import torch
@@ -107,9 +109,13 @@ class CrossEncoderReranker:
         )
 
     def _load(self):
-        if self._model is None:
-            self._model = self._build_model()
-        return self._model
+        # Locked: `_score` runs in worker threads, so two concurrent cold-start
+        # requests would otherwise both see `_model is None` and build two copies
+        # of a ~2 GB model. Held for the whole build — it is paid once per process.
+        with self._load_lock:
+            if self._model is None:
+                self._model = self._build_model()
+            return self._model
 
     def _score(self, query: str, texts: Sequence[str]) -> list[float]:
         """Blocking: loads weights on first call and runs the forward pass."""
@@ -146,7 +152,7 @@ class NoopReranker:
 
 
 def _device() -> str:
-    # ponytail: Apple Silicon dev box + CPU-only CI is the whole deployment surface
+    # trade-off: Apple Silicon dev box + CPU-only CI is the whole deployment surface
     # today, so cuda is deliberately not probed. Add it here when a GPU box exists.
     import torch
 

@@ -1,5 +1,7 @@
 """Unit tests for Arabic index/query normalization. Pure logic - no DB, no network."""
 
+import pytest
+
 from ingestion.normalize import (
     normalize_digits,
     normalize_for_index,
@@ -209,3 +211,42 @@ def test_normalize_query_makes_orthographic_variants_match_the_index():
 
     # Assert
     assert asked == indexed
+
+
+# ------------------------------------------------ bidi / zero-width controls
+
+
+@pytest.mark.parametrize(
+    ("name", "char"),
+    [
+        ("RLM", "\u200f"),
+        ("LRM", "\u200e"),
+        ("ZWNJ", "\u200c"),
+        ("ZWSP", "\u200b"),
+        ("BOM", "\ufeff"),
+        ("RLE", "\u202b"),
+        ("soft hyphen", "\u00ad"),
+    ],
+)
+def test_formatting_characters_never_reach_the_index_form(name, char):
+    """Regression: these survived NFKC, are not `isspace()`, and landed in the tsvector.
+
+    ``_tsquery`` builds query terms with ``\\w+``, which drops them — so an
+    affected chunk indexed a token no query could ever produce and disappeared
+    from the lexical leg silently. ``ingestion.fetch`` parses with
+    ``convert_charrefs=True``, so the ``&rlm;``/``&lrm;`` entities in RTL legal
+    markup arrive as exactly these.
+    """
+    # Arrange / Act
+    normalized = normalize_for_index(f"المادة{char} 12")
+
+    # Assert
+    assert char not in normalized, name
+    assert normalized == normalize_for_index("المادة 12")
+
+
+def test_a_decorated_query_and_a_clean_document_still_normalize_alike():
+    """Index and query forms must stay byte-identical or retrieval degrades."""
+    assert normalize_query("\u200fكم\u200c مدة الإشعار؟") == normalize_for_index(
+        "كم مدة الإشعار؟"
+    )

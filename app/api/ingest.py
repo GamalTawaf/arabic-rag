@@ -30,13 +30,15 @@ Unhandled failures still fall through to a 500, which is the right default for
 
 from __future__ import annotations
 
+import hmac
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.db import get_db
 from app.deps import build_embedder
 from app.ingest_worker import (
@@ -72,6 +74,33 @@ EmbedderDep = Annotated[Embedder, Depends(get_ingest_embedder)]
 _DB_UNAVAILABLE = "ingestion storage is unavailable; retry"
 
 
+def require_ingest_key(x_api_key: Annotated[str | None, Header()] = None) -> None:
+    """Shared-secret gate on ``/ingest``, off unless ``INGEST_API_KEY`` is set.
+
+    Read at request time, not import time, so tests and deployments can flip it.
+    ``compare_digest`` rather than ``==`` because a shared secret compared with
+    an early-exit string comparison is timing-attackable.
+
+    # trade-off: one static key, no rotation, no per-caller identity, and it is
+    # the only thing between the open internet and a write path when Cloud Run is
+    # deployed with allow_unauthenticated (terraform's default). Adequate for a
+    # demo; the upgrade path is Cloud Run IAM + a service account, which is what
+    # /ingest/pubsub already uses (terraform/pubsub.tf) and needs no app code.
+    """
+    expected = settings.ingest_api_key
+    if not expected:
+        return
+    # Compared as bytes: compare_digest raises TypeError on a str containing any
+    # non-ASCII codepoint, and the header is attacker-controlled — an unauthorized
+    # caller could otherwise turn the auth gate into a 500 at will.
+    if x_api_key is None or not hmac.compare_digest(
+        x_api_key.encode("utf-8"), expected.encode("utf-8")
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid or missing x-api-key"
+        )
+
+
 def _counts(doc_id: str, stats: IngestStats, model_key: str) -> dict:
     return {
         "doc_id": doc_id,
@@ -87,7 +116,7 @@ async def _ingest(
 ) -> IngestStats:
     """Run the pipeline, turning a database failure into a retryable 503.
 
-    # ponytail: embedding runs on the request path. Measured on this laptop
+    # trade-off: embedding runs on the request path. Measured on this laptop
     # (Apple Silicon/MPS, local Postgres): a 2.6k-character document, 9 chunks,
     # 0.40 s warm and 7.9 s on the first request because that one loads bge-m3's
     # weights. Ceiling: the request timeout — Cloud Run defaults to 300 s and its
@@ -113,7 +142,7 @@ async def _ingest(
             ) from exc
 
 
-@router.post("/ingest")
+@router.post("/ingest", dependencies=[Depends(require_ingest_key)])
 async def ingest(document: IngestDocument, db: DbSession, embedder: EmbedderDep):
     """Ingest one document synchronously: chunk -> normalize -> embed -> upsert.
 
@@ -134,6 +163,11 @@ async def ingest_pubsub(request: Request, db: DbSession, embedder: EmbedderDep):
     :mod:`app.ingest_worker`. This handler therefore keeps no record of which
     ``messageId`` it has seen — it is genuinely fine for the same message to be
     processed twice.
+
+    No ``x-api-key`` check here, unlike ``/ingest``: the push subscription is
+    already OIDC-authenticated at the infrastructure layer against a dedicated
+    service account (terraform/pubsub.tf), which is the stronger control. Adding
+    the header would mean carrying the secret through Terraform for no gain.
     """
     try:
         message = decode_push(await request.body())

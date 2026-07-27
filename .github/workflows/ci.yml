@@ -57,7 +57,13 @@ jobs:
         run: pytest
 
       - name: Audit dependencies
-        run: pip-audit -r requirements.txt
+        # Every requirements file, not just the runtime one. requirements-models
+        # carries torch, sentence-transformers, openai and cohere — the largest
+        # dependency surface in the repo — and was previously never scanned.
+        run: |
+          pip-audit -r requirements.txt \
+                    -r requirements-dev.txt \
+                    -r requirements-models.txt
 
   # ---------------------------------------------------------------------------
   # Retrieval regression gate.

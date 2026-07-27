@@ -18,18 +18,21 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
+from sqlalchemy import func, select
 
 from app.config import settings
 from app.generation.base import Completion, ErrorKind, ProviderError, Usage
 from app.generation.budget import NOT_IN_CORPUS
 from app.generation.failover import AllProvidersFailed
 from app.models.chunks import Chunk
+from app.models.query_cache import QueryCache
 from app.observability.cost import SpendCapExceeded, SpendTracker
 from app.planning.planner import NoopPlanner, RuleBasedPlanner
 from app.retrieval.cache import store as cache_store
 from app.retrieval.rerank import RERANK_SOURCE
 from app.retrieval.search import Hit
 from app.service import (
+    DEFAULT_CONFIG,
     EVENT_CITATIONS,
     EVENT_DONE,
     EVENT_ERROR,
@@ -37,6 +40,7 @@ from app.service import (
     EVENT_TOKEN,
     REFUSALS,
     RagService,
+    _cited_scores,
 )
 from ingestion.normalize import normalize_for_index
 
@@ -271,7 +275,15 @@ async def test_cache_hit_returns_the_stored_answer_without_calling_the_provider(
     provider = FakeProvider()
     service = make_service(provider=provider)
     await cache_store(
-        db_session, MSA_QUESTION, unit_vector(0), "bge", "جواب محفوظ", ["law:49:0"]
+        db_session,
+        MSA_QUESTION,
+        unit_vector(0),
+        "bge",
+        # The service's own key, not a literal: a hand-written copy would drift
+        # and the test would pass by missing the cache instead of hitting it.
+        service._pipeline_key(DEFAULT_CONFIG),
+        "جواب محفوظ",
+        ["law:49:0"],
     )
 
     # Act
@@ -285,6 +297,42 @@ async def test_cache_hit_returns_the_stored_answer_without_calling_the_provider(
     # Citations are rehydrated from the corpus, not returned as bare ids
     assert [citation.chunk_id for citation in answer.citations] == ["law:49:0"]
     assert answer.citations[0].excerpt == NOTICE_TEXT
+
+
+def test_cited_scores_reads_both_stored_shapes():
+    # Arrange: a bare id (written before scores were stored), a current scored
+    # entry, and two rows this version cannot read.
+    stored = ["law:49:0", {"chunk_id": "law:50:0", "score": 0.8125}, {"oops": 1}, 7]
+
+    # Act
+    pairs = _cited_scores(stored)
+
+    # Assert: legacy reports the 0.0 it always did, junk is skipped rather than
+    # crashing the hit, and order is preserved.
+    assert pairs == [("law:49:0", 0.0), ("law:50:0", 0.8125)]
+
+
+async def test_a_cache_hit_replays_the_stored_rerank_score(db_session):
+    # Arrange
+    await seed_corpus(db_session)
+    service = make_service(provider=FakeProvider())
+    await cache_store(
+        db_session,
+        MSA_QUESTION,
+        unit_vector(0),
+        "bge",
+        service._pipeline_key(DEFAULT_CONFIG),
+        "جواب محفوظ",
+        [{"chunk_id": "law:49:0", "score": 0.8125}],
+    )
+
+    # Act
+    answer = await service.answer(db_session, MSA_QUESTION)
+
+    # Assert: a cached citation renders identically to a generated one, which is
+    # the whole point — a 0.0 here made cached answers look unranked in any UI.
+    assert answer.cached is True
+    assert [citation.score for citation in answer.citations] == [0.8125]
 
 
 async def test_a_generated_answer_is_cached_and_the_next_call_reuses_it(db_session):
@@ -435,7 +483,15 @@ async def test_stream_serves_a_cache_hit_as_one_token_event(db_session):
     provider = FakeProvider()
     service = make_service(provider=provider)
     await cache_store(
-        db_session, MSA_QUESTION, unit_vector(0), "bge", "جواب محفوظ", ["law:49:0"]
+        db_session,
+        MSA_QUESTION,
+        unit_vector(0),
+        "bge",
+        # The service's own key, not a literal: a hand-written copy would drift
+        # and the test would pass by missing the cache instead of hitting it.
+        service._pipeline_key(DEFAULT_CONFIG),
+        "جواب محفوظ",
+        ["law:49:0"],
     )
 
     # Act
@@ -567,3 +623,92 @@ def test_importing_app_main_loads_neither_torch_nor_sentence_transformers():
 
     # Assert
     assert result.stdout.strip() == "0 0", result.stdout
+
+
+# ------------------------------------------- refusals must not enter the cache
+
+
+async def test_a_model_generated_refusal_is_never_cached(db_session):
+    """Regression: only the score gate short-circuited, and it is off by default.
+
+    With `rerank_min_score` at its measured 0.0 the model declining per the
+    system prompt is the live refusal path. Caching it pinned the refusal: the
+    cache is append-only with no TTL and no invalidation on re-ingestion, so
+    ingesting the very article that was missing would never dislodge it — and it
+    came back with `refused=false`.
+    """
+    # Arrange
+    await seed_corpus(db_session)
+    provider = FakeProvider(text=NOT_IN_CORPUS)
+    service = make_service(provider=provider)
+
+    # Act
+    first = await service.answer(db_session, MSA_QUESTION)
+    second = await service.answer(db_session, MSA_QUESTION)
+
+    # Assert — nothing was stored, so the second request regenerates
+    assert first.text == NOT_IN_CORPUS
+    assert second.cached is False
+    assert provider.complete_calls == 2
+    assert await db_session.scalar(select(func.count(QueryCache.id))) == 0
+
+
+async def test_a_real_answer_is_still_cached(db_session):
+    """The refusal guard must not block the normal path."""
+    # Arrange
+    await seed_corpus(db_session)
+    provider = FakeProvider()
+    service = make_service(provider=provider)
+
+    # Act
+    await service.answer(db_session, MSA_QUESTION)
+    second = await service.answer(db_session, MSA_QUESTION)
+
+    # Assert
+    assert second.cached is True
+    assert provider.complete_calls == 1
+
+
+async def test_the_same_question_under_a_different_config_is_not_served_from_cache(
+    db_session,
+):
+    """The cache key carries the pipeline; see app/retrieval/cache.py."""
+    # Arrange
+    await seed_corpus(db_session)
+    provider = FakeProvider()
+    service = make_service(provider=provider)
+    await service.answer(db_session, MSA_QUESTION, "hybrid+rerank")
+
+    # Act
+    other = await service.answer(db_session, MSA_QUESTION, "dense")
+
+    # Assert — a second real generation, not the first config's answer
+    assert other.cached is False
+    assert provider.complete_calls == 2
+
+
+# ------------------------------------------ spend accounting on a broken stream
+
+
+async def test_a_client_disconnect_mid_stream_still_settles_the_spend(db_session):
+    """Regression: `_record_usage` sat after the provider loop with no `finally`.
+
+    A browser closing an SSE tab throws GeneratorExit at the token `yield`, so
+    the accounting never ran: the vendor had billed real tokens and the tracker
+    recorded $0. Repeat-disconnect traffic made the daily cap a no-op.
+    """
+    # Arrange
+    await seed_corpus(db_session)
+    service = make_service(provider=FakeProvider())
+
+    # Act — consume one token frame, then abandon the generator as a client would
+    events = service.stream(db_session, MSA_QUESTION)
+    async for name, _payload in events:
+        if name == EVENT_TOKEN:
+            break
+    await events.aclose()
+
+    # Assert — the hold is released rather than left pinning the cap shut
+    spend = service.spend.today()
+    assert spend.usd >= 0.0
+    assert spend.usd < service.spend.cap_usd

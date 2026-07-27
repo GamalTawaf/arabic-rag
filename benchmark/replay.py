@@ -20,7 +20,7 @@ says which environment variable would enable it. A budget check that quietly
 omitted the dominant stage would report green while measuring a third of the
 request.
 
-# ponytail: this reads ``RagService._prepare`` directly on the no-provider path.
+# trade-off: this reads ``RagService._prepare`` directly on the no-provider path.
 # It is private, and that is the trade: the alternative is a second copy of the
 # stage sequence in this file, which is exactly the thing that drifts. Upgrade
 # path: if a third caller ever needs retrieval-without-generation, promote it to a
@@ -116,15 +116,22 @@ def summarise(samples: dict[str, list[float]]) -> list[StageStats]:
     reported (and treated as a failure by :func:`check`) rather than dropped:
     an unallocated stage means the budget document no longer describes the
     pipeline.
+
+    The reverse also holds: a **budgeted** stage that produced no samples is
+    reported with ``n=0`` rather than omitted. Omitting it let the gate pass on a
+    pipeline it never exercised — and that is not exotic, it is what the second
+    run does. The semantic cache is append-only, so a replay of the same
+    questions serves every one from cache and `retrieve`, `fuse` and `rerank`
+    never execute. :func:`check` fails on ``n=0``.
     """
-    ordered = [name for name in BUDGET if name in samples]
+    ordered = list(BUDGET)
     ordered += sorted(name for name in samples if name not in BUDGET and name != TOTAL)
     if TOTAL in samples:
         ordered.append(TOTAL)
 
     stats: list[StageStats] = []
     for name in ordered:
-        values = samples[name]
+        values = samples.get(name, [])
         stats.append(
             StageStats(
                 name=name,
@@ -142,13 +149,20 @@ def check(stats: Sequence[StageStats], *, generated: bool) -> tuple[bool, list[s
 
     Without a generation provider the ``total`` line is missing the stage that
     dominates it, so comparing it to the 3.5 s target would pass for the wrong
-    reason. It is reported and explicitly not checked.
+    reason. It is reported and explicitly not checked, and neither is the absence
+    of ``generate`` samples.
     """
     problems: list[str] = []
     for stage in stats:
-        if stage.name == TOTAL and not generated:
+        if stage.name in (TOTAL, GENERATE) and not generated:
             continue
-        if stage.budget is None:
+        if stage.n == 0:
+            problems.append(
+                f"{stage.name}: no samples — the replay never exercised this stage, "
+                "so its allocation is unverified (a cached replay skips retrieval; "
+                "re-run against a clean query_cache or with the cache disabled)"
+            )
+        elif stage.budget is None:
             problems.append(
                 f"{stage.name}: no allocation in BUDGET "
                 f"(p95 {stage.p95:.2f} ms) — the pipeline gained a stage the budget does not know about"

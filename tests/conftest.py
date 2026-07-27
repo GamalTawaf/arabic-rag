@@ -1,4 +1,5 @@
 import os
+import sys
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -56,8 +57,13 @@ def pg_schema(pg_url):
         await engine.dispose()
 
     asyncio.run(reset_schema())
+    # `python -m alembic` with THIS interpreter, not a hardcoded `.venv/bin/alembic`:
+    # CI installs into the runner's system Python with no virtualenv, so that path
+    # does not exist there and subprocess.run raises FileNotFoundError (which
+    # check=False does not suppress) — every DB-backed test errors out. Same
+    # breakage for anyone on conda or a venv by another name.
     result = subprocess.run(
-        [".venv/bin/alembic", "upgrade", "head"],
+        [sys.executable, "-m", "alembic", "upgrade", "head"],
         env={**os.environ, "DATABASE_URL": pg_url},
         capture_output=True,
         text=True,
@@ -65,7 +71,14 @@ def pg_schema(pg_url):
         check=False,
     )
     if result.returncode != 0:
-        pytest.skip(f"alembic upgrade failed against the test database: {result.stderr[-500:]}")
+        # Fail, never skip. A skip here is the dangerous outcome: a broken
+        # migration would take every DB-backed test out of the run, pytest would
+        # exit 0, CI would go green, and the migration would ship — the exact
+        # drift this fixture exists to catch.
+        raise RuntimeError(
+            "alembic upgrade head failed against the test database "
+            f"(exit {result.returncode}).\n{result.stdout[-2000:]}\n{result.stderr[-2000:]}"
+        )
     return pg_url
 
 
@@ -74,7 +87,7 @@ async def db_session(pg_url, pg_schema):
     from sqlalchemy import text
 
     engine = create_async_engine(pg_url)
-    # ponytail: TRUNCATE per test rather than recreating the schema — the schema comes
+    # trade-off: TRUNCATE per test rather than recreating the schema — the schema comes
     # from alembic once per session (pg_schema). Ceiling: tests share one database, so
     # they cannot run in parallel against it. Upgrade path: a database per xdist worker.
     tables = ", ".join(table.name for table in Base.metadata.sorted_tables)

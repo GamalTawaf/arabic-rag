@@ -99,9 +99,31 @@ variable "rerank_enabled" {
 }
 
 variable "daily_spend_cap_usd" {
-  description = "DAILY_SPEND_CAP_USD for the app's own kill-switch. Independent of any GCP budget alert."
+  description = <<-EOT
+    DAILY_SPEND_CAP_USD for the app's own kill-switch. Independent of any GCP
+    budget alert.
+
+    1.0 for a public URL, not 5.0: the cap is per-process, so the real ceiling is
+    this number times max_instances. At 1.0 x 2 the worst an open /ask can cost
+    in a day is $2 of generation. Raise it for a private demo where nobody is
+    fuzzing the endpoint.
+  EOT
   type        = number
-  default     = 5.0
+  default     = 1.0
+}
+
+variable "ask_rate_limit_per_minute" {
+  description = <<-EOT
+    ASK_RATE_LIMIT_PER_MINUTE — sliding-window requests per client IP on /ask.
+    0 disables the limiter.
+
+    10, well below the app's own default of 60, because a human evaluating the
+    demo asks a handful of questions and a script does not. Bounds how fast the
+    spend cap above can be reached, and it is per-instance and per-IP, so it
+    slows abuse rather than preventing it. See the README's security posture.
+  EOT
+  type        = number
+  default     = 10
 }
 
 variable "allow_unauthenticated" {

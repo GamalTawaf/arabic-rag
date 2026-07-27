@@ -8,6 +8,12 @@ output "database_connection_name" {
   value       = google_sql_database_instance.pg.connection_name
 }
 
+output "ingest_api_key" {
+  description = "The x-api-key POST /ingest requires. Read with: terraform output -raw ingest_api_key"
+  value       = random_password.ingest_key.result
+  sensitive   = true
+}
+
 output "ingest_topic" {
   description = "Pub/Sub topic that drives asynchronous ingestion. Publish with: gcloud pubsub topics publish <topic> --message '{...}'"
   value       = google_pubsub_topic.ingest.id

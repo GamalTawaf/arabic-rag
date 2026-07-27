@@ -10,9 +10,15 @@ Fakes come from ``tests/test_service.py``; ``conftest.py`` is not ours to extend
 from __future__ import annotations
 
 import json
+import threading
+import time
+from types import SimpleNamespace
 
 import pytest
+from fastapi import HTTPException
 
+from app.api import ask as ask_module
+from app.config import settings
 from app.deps import get_service, reset_singletons
 from app.generation.base import ErrorKind, ProviderError
 from app.generation.failover import AllProvidersFailed
@@ -20,6 +26,7 @@ from app.main import app
 from app.observability.cost import SpendTracker
 from app.retrieval.cache import store as cache_store
 from app.service import (
+    DEFAULT_CONFIG,
     EVENT_CITATIONS,
     EVENT_DONE,
     EVENT_ERROR,
@@ -205,9 +212,17 @@ async def test_a_cache_hit_never_reaches_the_provider(client, db_session, use_se
     # Arrange
     await seed_corpus(db_session)
     provider = FakeProvider()
-    use_service(provider=provider)
+    service = use_service(provider=provider)
     await cache_store(
-        db_session, MSA_QUESTION, unit_vector(0), "bge", "جواب محفوظ", ["law:49:0"]
+        db_session,
+        MSA_QUESTION,
+        unit_vector(0),
+        "bge",
+        # The service's own key, not a literal: a hand-written copy would drift
+        # and the test would pass by missing the cache instead of hitting it.
+        service._pipeline_key(DEFAULT_CONFIG),
+        "جواب محفوظ",
+        ["law:49:0"],
     )
 
     # Act
@@ -310,17 +325,29 @@ async def test_all_providers_failing_returns_502_naming_every_attempt(
     assert "timeout" in detail["attempts"][0]["reason"]
 
 
-async def test_a_fatal_provider_error_is_not_dressed_up_as_an_answer(
+async def test_a_fatal_provider_error_becomes_a_structured_502_not_a_bare_500(
     client, db_session, use_service
 ):
-    # Arrange — a 401 is our bug, and FailoverProvider deliberately never fails
-    # over on it; the route must not turn it into a 200.
+    """A 401 is our bug, and FailoverProvider deliberately never fails over on it.
+
+    It therefore reaches the route as a bare ``ProviderError``, not as
+    ``AllProvidersFailed``. This test used to assert the exception escaped the
+    route entirely — which in production is a 500 with no body, while the SSE
+    twin returned a structured ``error`` frame for the identical cause. Same
+    failure must not get two different answers depending on ``stream``.
+    """
+    # Arrange
     await seed_corpus(db_session)
     use_service(provider=FakeProvider(error=ProviderError("fake", ErrorKind.FATAL, "HTTP 401")))
 
-    # Act / Assert
-    with pytest.raises(ProviderError):
-        await post(client, question=MSA_QUESTION, stream=False)
+    # Act
+    response = await post(client, question=MSA_QUESTION, stream=False)
+
+    # Assert — not a 200, and not an empty 500 either
+    assert response.status_code == 502
+    detail = response.json()["detail"]
+    assert detail["error"] == "provider_failed"
+    assert detail["attempts"] == [{"provider": "fake", "reason": "fatal: HTTP 401"}]
 
 
 async def test_a_keyless_environment_returns_503_naming_the_missing_key(
@@ -378,3 +405,167 @@ async def test_the_422_for_an_unknown_config_lists_the_valid_ones(client, use_se
     # Assert
     message = json.dumps(response.json(), ensure_ascii=False)
     assert "hybrid+rerank" in message and "magic" in message
+
+
+# --------------------------------------------------------------- rate limiting
+
+
+@pytest.fixture(autouse=True)
+def _clear_rate_limiter():
+    """The counter is module-level and would otherwise leak between tests."""
+    ask_module._hits.clear()
+    yield
+    ask_module._hits.clear()
+
+
+async def test_the_rate_limiter_is_off_at_the_default_limit(client, use_service):
+    # Arrange — 60/min shipped, and no test here comes close
+    assert settings.ask_rate_limit_per_minute == 60
+    use_service()
+
+    # Act
+    statuses = [
+        (await post(client, question=MSA_QUESTION, stream=False)).status_code
+        for _ in range(5)
+    ]
+
+    # Assert
+    assert statuses == [200] * 5
+
+
+async def test_requests_past_the_limit_get_429_with_retry_after(
+    client, db_session, use_service, monkeypatch
+):
+    # Arrange
+    monkeypatch.setattr(settings, "ask_rate_limit_per_minute", 2)
+    await seed_corpus(db_session)
+    provider = FakeProvider()
+    use_service(provider=provider)
+
+    # Act
+    first = await post(client, question=MSA_QUESTION, stream=False)
+    second = await post(client, question=MSA_QUESTION, stream=False)
+    allowed_calls = provider.complete_calls
+    third = await post(client, question=MSA_QUESTION, stream=False)
+
+    # Assert
+    assert [first.status_code, second.status_code] == [200, 200]
+    assert third.status_code == 429
+    assert third.headers["Retry-After"] == "60"
+    assert "2 requests per minute" in third.json()["detail"]
+    # The rejected request never reached the pipeline.
+    assert provider.complete_calls == allowed_calls
+
+
+async def test_the_window_slides_so_old_requests_stop_counting(
+    client, use_service, monkeypatch
+):
+    # Arrange
+    monkeypatch.setattr(settings, "ask_rate_limit_per_minute", 1)
+    use_service()
+    assert (await post(client, question=MSA_QUESTION, stream=False)).status_code == 200
+    assert (await post(client, question=MSA_QUESTION, stream=False)).status_code == 429
+
+    # Act — age every recorded hit past the window
+    for seen in ask_module._hits.values():
+        for index, stamp in enumerate(seen):
+            seen[index] = stamp - ask_module.RATE_WINDOW_S
+
+    # Assert
+    assert (await post(client, question=MSA_QUESTION, stream=False)).status_code == 200
+
+
+async def test_a_limit_of_zero_disables_the_limiter(client, use_service, monkeypatch):
+    # Arrange
+    monkeypatch.setattr(settings, "ask_rate_limit_per_minute", 0)
+    use_service()
+
+    # Act
+    statuses = [
+        (await post(client, question=MSA_QUESTION, stream=False)).status_code
+        for _ in range(4)
+    ]
+
+    # Assert — and nothing was recorded to grow the dict
+    assert statuses == [200] * 4
+    assert not ask_module._hits
+
+
+def test_the_rate_limiter_serialises_concurrent_threads(monkeypatch):
+    """Regression: `rate_limit` is a sync dependency, so FastAPI runs it in the
+    threadpool and real OS threads share `_hits`.
+
+    Unlocked, the trim-then-check sequence is not atomic: thread A evaluates
+    `while seen and ...` as truthy, thread B pops the last timestamp, thread A
+    evaluates `seen[0]` and raises IndexError — an unhandled 500 on a legitimate
+    request. `del _hits[key]` raced the same way and raised KeyError.
+
+    Asserted as mutual exclusion rather than by racing for the crash: the crash
+    needs a GIL switch inside a two-instruction window, so a test that hammers
+    threads and hopes passes with or without the lock and proves nothing. Two
+    threads overlapping inside the section IS the defect; the IndexError is only
+    its most visible symptom.
+    """
+    # Arrange — instrument the section so overlap is observable
+    monkeypatch.setattr(settings, "ask_rate_limit_per_minute", 100)
+    ask_module._hits.clear()
+    depth = 0
+    overlaps: list[int] = []
+    real_trim = ask_module._trim
+
+    def instrumented(seen, now):
+        nonlocal depth
+        depth += 1
+        if depth > 1:
+            overlaps.append(depth)
+        time.sleep(0.02)  # long enough that an unlocked sibling must overlap
+        real_trim(seen, now)
+        depth -= 1
+
+    monkeypatch.setattr(ask_module, "_trim", instrumented)
+    request = SimpleNamespace(client=SimpleNamespace(host="9.9.9.9"))
+    errors: list[BaseException] = []
+
+    def call(barrier):
+        barrier.wait()
+        try:
+            ask_module.rate_limit(request)
+        except HTTPException:
+            pass
+        except BaseException as exc:  # noqa: BLE001 — that is the assertion
+            errors.append(exc)
+
+    # Act — eight threads released simultaneously onto one key
+    barrier = threading.Barrier(8)
+    threads = [threading.Thread(target=call, args=(barrier,)) for _ in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    # Assert — one at a time, and every request counted exactly once
+    assert overlaps == [], f"{len(overlaps)} threads entered the section together"
+    assert errors == []
+    assert len(ask_module._hits["9.9.9.9"]) == 8
+
+
+def test_the_limiter_table_does_not_grow_without_bound(monkeypatch):
+    """Regression: the comment claimed one-shot addresses were dropped; the
+    `del` was undone by the defaultdict on the very next line, so every distinct
+    IP left a permanent entry — 5000 IPs measured as 5000 permanent entries."""
+    # Arrange
+    monkeypatch.setattr(settings, "ask_rate_limit_per_minute", 60)
+    monkeypatch.setattr(ask_module, "RATE_SWEEP_AT", 100)
+    ask_module._hits.clear()
+
+    # Act — a spray of addresses that never come back
+    for index in range(1000):
+        ask_module.rate_limit(
+            SimpleNamespace(client=SimpleNamespace(host=f"10.0.{index // 256}.{index % 256}"))
+        )
+        for seen in ask_module._hits.values():
+            for position, stamp in enumerate(seen):
+                seen[position] = stamp - ask_module.RATE_WINDOW_S
+
+    # Assert — swept, not accumulated
+    assert len(ask_module._hits) <= ask_module.RATE_SWEEP_AT

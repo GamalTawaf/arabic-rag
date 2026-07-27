@@ -139,7 +139,7 @@ async def lexical_search(
     ``tsv`` is built from ``text_normalized`` with the 'simple' config, so a
     diacritised or hamza-spelled query would otherwise silently match nothing.
 
-    # ponytail: 'simple' has no Arabic stemmer and no stopword list, so this is
+    # trade-off: 'simple' has no Arabic stemmer and no stopword list, so this is
     # exact token matching after normalization — "الأجور" will not find "الأجر",
     # broken plurals and clitics are missed, and common particles still score.
     # Ceiling accepted because the dense leg covers morphology and RRF only
@@ -215,7 +215,7 @@ async def hybrid_search(
     AsyncSession is one connection, and two coroutines sharing it raise
     ``InvalidRequestError: concurrent operations are not permitted``.
 
-    # ponytail: consequence of the fan-out — the two legs read their own
+    # trade-off: consequence of the fan-out — the two legs read their own
     # snapshots and cannot see rows the caller has written but not committed.
     # Fine for search over an already-ingested corpus. Upgrade path if that ever
     # bites: drop the gather and await the two searches on `session` in sequence
@@ -224,8 +224,15 @@ async def hybrid_search(
     _check_limit(limit)
     leg_session = async_sessionmaker(session.bind, expire_on_commit=False)
     async with leg_session() as dense_leg, leg_session() as lexical_leg:
+        # return_exceptions=True: a bare gather propagates the first failure
+        # immediately, which unwinds the `async with` and closes the session the
+        # still-running sibling is querying on. Let both legs settle, then raise.
         dense, lexical = await asyncio.gather(
             dense_search(dense_leg, query_vec, model_key, limit),
             lexical_search(lexical_leg, query, limit),
+            return_exceptions=True,
         )
+    for leg in (dense, lexical):
+        if isinstance(leg, BaseException):
+            raise leg
     return rrf_fuse((dense, lexical), limit=limit)

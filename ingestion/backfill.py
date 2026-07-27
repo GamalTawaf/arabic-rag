@@ -60,7 +60,7 @@ async def backfill_embeddings(
         rows = (await session.execute(_next_batch(column, last_id, batch_size, only_missing))).all()
         if not rows:
             break
-        # ponytail: embeds Chunk.text (the original, diacritics and all), not
+        # trade-off: embeds Chunk.text (the original, diacritics and all), not
         # text_normalized — same assumption as ingestion.pipeline._with_embeddings,
         # and the two must stay consistent or the benchmark compares two corpora.
         # embed_passages, never embed_queries: e5 prefixes "passage: " here and

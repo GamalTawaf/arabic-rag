@@ -34,7 +34,7 @@ answer. The **digit** guard is defence in depth: on this model digit-only pairs
 already fall below 0.95, so it decides nothing today, and it starts mattering
 only if the threshold is lowered or the embedder swapped.
 
-# ponytail: the guard is exact-match on digits and a fixed particle list, and it
+# trade-off: the guard is exact-match on digits and a fixed particle list, and it
 # is deliberately over-eager — it counts interrogative "ما" as a negation, so
 # "ما مدة الإشعار" never matches "كم مدة الإشعار" (measured 0.9652: a real,
 # accepted false miss). Telling interrogative "ما" from Gulf negation "ما يجوز"
@@ -93,7 +93,11 @@ NEGATION_PARTICLES = frozenset(
 @dataclass(frozen=True)
 class CachedAnswer:
     answer: str
-    citations: list[str]
+    #: Opaque here on purpose: the cache stores and returns whatever
+    #: ``query_cache.citations`` holds, and
+    #: :func:`app.service._cited_scores` owns knowing that older rows are bare id
+    #: strings while current ones are ``{"chunk_id", "score"}`` objects.
+    citations: list[object]
     similarity: float  # cosine, 1.0 == identical vector
     age_seconds: float  # since the entry was created, not since its last hit
 
@@ -131,21 +135,31 @@ async def lookup(
     query: str,
     query_vec: Sequence[float],
     model_key: str,
-    threshold: float = settings.semantic_cache_threshold,
+    pipeline_key: str,
+    threshold: float | None = None,
 ) -> CachedAnswer | None:
     """The cached answer for a semantically equivalent question, or ``None``.
 
-    A hit requires all three of: same ``model_key``, cosine similarity
-    ``>= threshold``, and an identical :func:`guard_key`. On a hit ``hits`` is
-    incremented and ``last_hit_at`` set, so hit rate is queryable from the table
-    itself rather than only from spans.
+    A hit requires all four of: same ``model_key``, same ``pipeline_key``, cosine
+    similarity ``>= threshold``, and an identical :func:`guard_key`. On a hit
+    ``hits`` is incremented and ``last_hit_at`` set, so hit rate is queryable
+    from the table itself rather than only from spans.
 
-    # ponytail: only the single nearest row is considered. If the nearest row
+    ``pipeline_key`` is not optional and has no default on purpose: an answer is
+    a product of the whole pipeline, and a cache that ignores which pipeline made
+    it hands back a different config's answer. See :func:`app.service.pipeline_key`.
+
+    # trade-off: only the single nearest row is considered. If the nearest row
     # fails the guard the call is a miss even when the second-nearest would have
     # passed — one extra generation, versus scanning a candidate list on every
     # request. Upgrade path: take the top-k above threshold and return the first
     # that passes the guard.
     """
+    if threshold is None:
+        # Resolved here, not in the signature: a default argument is evaluated at
+        # import time, which freezes whatever `settings` held then and makes the
+        # value immune to configuration loaded or patched later.
+        threshold = settings.semantic_cache_threshold
     vector = _check(query_vec, model_key)
 
     distance = QueryCache.embedding.cosine_distance(vector)
@@ -158,18 +172,30 @@ async def lookup(
             QueryCache.created_at,
             distance.label("d"),
         )
-        .where(QueryCache.model_key == model_key)
+        .where(
+            QueryCache.model_key == model_key,
+            QueryCache.pipeline_key == pipeline_key,
+        )
         .order_by(distance, QueryCache.id)  # id breaks ties: reproducible
         .limit(1)
     )
     row = (await session.execute(statement)).first()
+    # Every miss path rolls back before returning. The SELECT autobegins a
+    # transaction, and this session is the *request's* session: leaving it open
+    # holds its pooled connection idle-in-transaction through embedding,
+    # retrieval, the LLM call and the whole SSE stream. At the default pool of
+    # 5+10, ~15 concurrent /ask exhausts it and takes /stats and /health/db down
+    # with it.
     if row is None:
+        await session.rollback()
         return None
 
     similarity = 1.0 - float(row.d)
     if similarity < threshold:
+        await session.rollback()
         return None
     if guard_key(row.query_normalized) != guard_key(query):
+        await session.rollback()
         return None  # near-identical wording, materially different question
 
     await session.execute(
@@ -192,12 +218,13 @@ async def store(
     query: str,
     query_vec: Sequence[float],
     model_key: str,
+    pipeline_key: str,
     answer: str,
-    citations: list[str],
+    citations: list[object],
 ) -> None:
     """Cache an answer. Silently ignores an empty answer — never cache a failure.
 
-    # ponytail: append-only, no TTL and no invalidation on re-ingestion, so a
+    # trade-off: append-only, no TTL and no invalidation on re-ingestion, so a
     # corpus update leaves stale answers behind. Acceptable while the corpus is a
     # frozen snapshot. Upgrade path: ``DELETE FROM query_cache`` at the end of
     # the ingestion pipeline, or an age filter in :func:`lookup`.
@@ -212,6 +239,7 @@ async def store(
             query_normalized=normalize_query(query),
             embedding=vector,
             model_key=model_key,
+            pipeline_key=pipeline_key,
             answer=answer,
             citations=list(citations),
         )

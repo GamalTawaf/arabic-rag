@@ -18,7 +18,7 @@ Two things the layout deliberately makes explicit rather than convenient:
    "measured and uninteresting"; ``{"status": "not_run", "reason": ...}`` reads as
    what it is. Same for a local model whose vector column was never backfilled.
 
-ponytail: no charts, no pandas, no statistics beyond means and a nearest-rank
+trade-off: no charts, no pandas, no statistics beyond means and a nearest-rank
 p95 — the harness already computes every metric and n is a few hundred. Ceiling:
 no confidence intervals, so the writeup states the Gulf subset (54 pairs) is too
 small to separate close configs. Upgrade path: bootstrap the per-pair scores.
@@ -559,9 +559,42 @@ async def _main(args: argparse.Namespace) -> int:
         await engine.dispose()
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    args.out.write_text(
+        json.dumps(_merge_results(args.out, data), ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
     _log(f"wrote {args.out} ({len(data['results'])} cells, {data['metadata']['wall_clock_s']}s)")
     return 0
+
+
+def _merge_results(path: Path, data: dict) -> dict:
+    """New run's ``metadata``/``results`` over whatever else the file already holds.
+
+    A wholesale ``write_text`` destroyed the top-level ``planning`` section: the
+    Gulf→MSA ablation and its depth-sensitivity tables are maintained by hand,
+    no code in this repo regenerates them, and ``app/service.py``,
+    ``app/planning/planner.py`` and the README all cite them as the provenance
+    for the shipped planner defaults. Running the documented benchmark command
+    once silently deleted 60+ lines of measured data.
+
+    ``evals.gate.write_baseline`` does the same read-modify-write for the same
+    reason; this is that pattern, applied where it was missing.
+    """
+    if not path.exists():
+        return data
+    try:
+        existing = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        # Never silently: an unreadable file here means the merge cannot protect
+        # anything, and the caller deserves to know before the write lands.
+        _log(f"warning: could not read {path} to merge ({exc}); writing fresh")
+        return data
+    if not isinstance(existing, dict):
+        return data
+    preserved = sorted(set(existing) - set(data))
+    if preserved:
+        _log(f"preserved hand-maintained sections: {', '.join(preserved)}")
+    return {**existing, **data}
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -14,9 +14,9 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from ingestion.normalize import normalize_digits
+from ingestion.normalize import fold_for_scan, normalize_digits
 
-# ponytail: chunk size is a plain character budget, not a real tokenizer. Arabic
+# trade-off: chunk size is a plain character budget, not a real tokenizer. Arabic
 # averages ~3 chars/token, so max_chars=1400 approximates the ~500-token target from
 # the design. Ceiling: chunk sizes drift by +/-20% across scripts and digit-heavy
 # text. Upgrade path: swap _split_with_overlap's len() for tiktoken / the embedding
@@ -55,23 +55,36 @@ def split_articles(text: str) -> list[tuple[str | None, str]]:
     if not text or not text.strip():
         return []
 
-    matches = list(_ARTICLE_HEADING.finditer(text))
+    # Scanned on a folded projection, sliced from the original. The heading
+    # regex tolerates only an optional shadda, so against raw text a heading
+    # written `المــادة` (tatweel) or `المَادة` (harakat) is invisible — and a
+    # missed heading does not just lose a boundary, it merges that whole article
+    # into the previous one, which then gets cited under the wrong article
+    # number. The committed corpus carries 288 diacritic codepoints and /ingest
+    # accepts arbitrary text, so this is the normal case, not the exotic one.
+    scan, offsets = fold_for_scan(text)
+    matches = list(_ARTICLE_HEADING.finditer(scan))
     if not matches:
         return [(None, text)]
 
     sections: list[tuple[str | None, str]] = []
-    preamble = text[: matches[0].start()]
+    preamble = text[: offsets[matches[0].start()]]
     if preamble.strip():
         sections.append((None, preamble))
 
     for index, match in enumerate(matches):
-        end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+        start = offsets[match.start()]
+        end = (
+            offsets[matches[index + 1].start()]
+            if index + 1 < len(matches)
+            else len(text)
+        )
         # A heading with nothing under it carries no retrievable content.
-        if not text[match.end() : end].strip():
+        if not text[offsets[match.end()] : end].strip():
             continue
         # Article numbers go into chunk ids, so they must be ASCII whatever the
         # source used — same digit fold the index normalizer applies.
-        sections.append((normalize_digits(match.group(1)), text[match.start() : end]))
+        sections.append((normalize_digits(match.group(1)), text[start:end]))
 
     return sections
 
@@ -123,18 +136,28 @@ def _split_with_overlap(text: str, max_chars: int, overlap_chars: int) -> list[s
 
     while start < length:
         end = min(start + max_chars, length)
+        hard_split = False
         if end < length:
             cut = _last_whitespace(text, start, end)
             if cut > start:
                 end = cut
-            # else: a single "word" longer than max_chars - hard split, rare enough
-            # in legal prose that a URL-style blob is the only realistic trigger.
-        piece = text[start:end].strip()
-        if piece:
-            pieces.append(piece)
+            else:
+                # A single "word" longer than max_chars — a URL or a base64 blob.
+                hard_split = True
+        piece = text[start:end]
+        if piece.strip():
+            pieces.append(piece.strip())
         if end >= length:
             break
-        start = _next_word_start(text, max(start + 1, end - overlap))
+        if hard_split:
+            # Resume exactly where the cut landed. Snapping to the next word start
+            # here would skip the entire remainder of the unbroken run: measured on
+            # a 5000-char blob, 3600 characters were dropped outright while
+            # IngestStats still reported success. A hard split has no word boundary
+            # to snap to and no overlap to apply.
+            start = end
+        else:
+            start = _next_word_start(text, max(start + 1, end - overlap))
 
     return pieces
 

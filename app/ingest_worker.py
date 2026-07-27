@@ -51,8 +51,13 @@ log = logging.getLogger(__name__)
 #: Chunk ids are ``doc_id:article:seq``. A doc_id containing ``:`` would split
 #: into the wrong fields on every downstream parse, so the character is banned
 #: rather than escaped — see :meth:`IngestDocument._usable_in_a_chunk_id`.
+#: ``\A``/``\Z``, not ``^``/``$``: Python's ``$`` also matches immediately before
+#: a trailing newline, so ``"my-doc\n"`` passed this check and the newline went
+#: straight into the chunk primary key — where it is invisible in logs, breaks
+#: exact-match lookups against the clean id, and makes re-ingesting the same
+#: document write a second set of rows.
 MAX_DOC_ID_CHARS = 128
-DOC_ID_RE = re.compile(rf"^[A-Za-z0-9][A-Za-z0-9._-]{{0,{MAX_DOC_ID_CHARS - 1}}}$")
+DOC_ID_RE = re.compile(rf"\A[A-Za-z0-9][A-Za-z0-9._-]{{0,{MAX_DOC_ID_CHARS - 1}}}\Z")
 
 MAX_TITLE_CHARS = 300
 MAX_URL_CHARS = 2048
@@ -186,7 +191,7 @@ async def ingest_document(
     corpus manifest but the ``chunks`` table has a column for none of them, so
     they reach the database only as part of nothing at all.
 
-    # ponytail: a `documents` table would keep them. Not built, because nothing
+    # trade-off: a `documents` table would keep them. Not built, because nothing
     # reads them yet — /ask cites chunk ids, and provenance lives in
     # data/corpus/manifest.json for the committed corpus.
     """

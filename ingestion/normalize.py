@@ -28,7 +28,7 @@ _DIACRITIC_CODEPOINTS = (
 )
 _DIACRITICS_TABLE = dict.fromkeys(_DIACRITIC_CODEPOINTS)
 
-# ponytail: flat one-to-one folds, no morphology and no dialect-specific letters
+# trade-off: flat one-to-one folds, no morphology and no dialect-specific letters
 # (Persian/Urdu ک گ پ, Egyptian ی). Ceiling: fails on non-Arabic-language text in
 # Arabic script. Upgrade path if that ever matters: camel-tools' normalizer.
 _LETTERS_TABLE = str.maketrans(
@@ -51,7 +51,59 @@ _DIGITS_TABLE = str.maketrans(
     }
 )
 
+# Bidi controls and zero-width formatting characters. NFKC keeps every one of
+# them and none is `str.isspace()`, so without this table they survive into
+# `text_normalized` and therefore into the generated tsvector — while `_tsquery`
+# builds its terms with `\w+`, which drops them. The result is a chunk that can
+# never be matched by the lexical leg, silently. Not hypothetical here:
+# `ingestion.fetch` parses with `convert_charrefs=True`, so the `&rlm;`/`&lrm;`
+# entities Arabic legal portals sprinkle through RTL markup arrive as literal
+# U+200F/U+200E.
+_FORMAT_CODEPOINTS = (
+    0x00AD,  # soft hyphen
+    *range(0x200B, 0x2010),  # ZWSP ZWNJ ZWJ LRM RLM + the 200x bidi marks
+    *range(0x202A, 0x202F),  # LRE RLE PDF LRO RLO
+    *range(0x2066, 0x206A),  # LRI RLI FSI PDI
+    0xFEFF,  # BOM / zero-width no-break space
+)
+_FORMAT_TABLE = dict.fromkeys(_FORMAT_CODEPOINTS)
+
+#: Dropped before *scanning* for structure (article headings). Diacritics and
+#: tatweel are decorative and a heading carrying them must still be found; see
+#: :func:`fold_for_scan`.
+_SCAN_DROP = frozenset((*_DIACRITIC_CODEPOINTS, *_FORMAT_CODEPOINTS))
+
 _WHITESPACE_RUN = re.compile(r"\s+")
+
+
+def strip_formatting(text: str) -> str:
+    """Remove bidi controls and zero-width characters (U+200B-U+200F, U+FEFF, ...)."""
+    return text.translate(_FORMAT_TABLE)
+
+
+def fold_for_scan(text: str) -> tuple[str, list[int]]:
+    """``(scannable_text, offsets)`` for finding structure in decorated text.
+
+    Diacritics, tatweel and bidi marks are dropped so a heading written
+    ``المــادة`` or ``المَادة`` is still recognisable, and ``offsets[i]`` is the
+    index in the ORIGINAL string of scanned character ``i`` — so a match found
+    here can be sliced out of the original without losing a single codepoint.
+    ``offsets`` carries a trailing sentinel, making ``offsets[match.end()]``
+    valid at the end of the string.
+
+    This exists because chunk text must stay verbatim (it is what gets cited and
+    embedded) while the structural scan must be tolerant. Normalizing the text
+    itself would corrupt citations; scanning the raw text misses real headings.
+    """
+    kept: list[str] = []
+    offsets: list[int] = []
+    for index, char in enumerate(text):
+        if ord(char) in _SCAN_DROP:
+            continue
+        kept.append(char)
+        offsets.append(index)
+    offsets.append(len(text))
+    return "".join(kept), offsets
 
 
 def strip_diacritics(text: str) -> str:
@@ -77,11 +129,12 @@ def normalize_digits(text: str) -> str:
 def normalize_for_index(text: str) -> str:
     """Full index-form pipeline.
 
-    NFKC -> strip diacritics -> fold letters -> ASCII digits -> collapse
-    whitespace runs to a single space -> strip. Arabic punctuation (، ؛ ؟) and
+    NFKC -> drop bidi/zero-width formatting -> strip diacritics -> fold letters
+    -> ASCII digits -> collapse whitespace runs to a single space -> strip. Arabic punctuation (، ؛ ؟) and
     Latin/ASCII content pass through untouched. Idempotent.
     """
     folded = unicodedata.normalize("NFKC", text)
+    folded = strip_formatting(folded)
     folded = strip_diacritics(folded)
     folded = normalize_letters(folded)
     folded = normalize_digits(folded)
