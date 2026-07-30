@@ -13,6 +13,8 @@ locals {
     "secretmanager.googleapis.com",
     "pubsub.googleapis.com",
     "cloudtrace.googleapis.com", # the "Cloud Trace enabled" requirement, literally
+    "monitoring.googleapis.com", # where the Prometheus sidecar writes (prometheus.tf)
+    "logging.googleapis.com",    # the sidecar writes its own logs as the runtime SA
     "iam.googleapis.com",
     "compute.googleapis.com",           # the VPC and the subnet Cloud Run egresses into
     "servicenetworking.googleapis.com", # the Private Service Access peering

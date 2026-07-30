@@ -42,6 +42,7 @@ second.
 | Artifact Registry (Docker) | `artifact_registry.tf` | keeps the 5 most recent versions |
 | Pub/Sub topic + push subscription + DLQ | `pubsub.tf` | pushes to `/ingest/pubsub` with an OIDC token |
 | Secret Manager × 5 | `secrets.tf` | `database-url`, `anthropic-api-key`, `google-api-key`, `hf-api-key`, `ingest-api-key` |
+| Managed Prometheus sidecar | `prometheus.tf` | scrapes the app's own `/metrics` from inside the instance, writes to Cloud Monitoring |
 | Two service accounts | `iam.tf` | runtime + Pub/Sub invoker. **Not** the default compute SA |
 | 7 project APIs | `apis.tf` | not disabled on destroy — see the comment there |
 
@@ -274,6 +275,37 @@ demo.
 
 ---
 
+## Logs: JSON, correlated, and scrubbed
+
+`LOG_JSON=true` and `GCP_PROJECT` are set on the service (`run.tf`), so every line
+is one JSON object carrying `severity`, the message, and the active span's
+`logging.googleapis.com/trace` — which is what makes a log entry in the console
+link to the span tree it came from.
+
+**There is no PII filter setting in Cloud Logging**, so the protection is
+in-process: `app/observability/logs.py` scrubs email / SSN / SIN / card / phone
+shapes, URL passwords and labelled credentials out of every line, and drops
+fields by name (`password`, `question`, `answer`, …) before anything is written.
+Nothing GCP-side is wired for this on purpose — a Log Router exclusion would
+*delete* matching entries rather than mask them, and the thing that actually
+belongs here is Sensitive Data Protection (DLP) de-identification, which is a
+paid API call. `app/observability/logs.py` carries the note on what adding it
+properly would involve.
+
+What no shape-matcher can do is recognise a name, an address or free text. That is
+why the service logs no question and no answer at all — a design constraint, not a
+filter.
+
+Shorten retention while you are at it — anything that does leak ages out sooner,
+and it is one command rather than a resource whose destroy path fights the
+built-in bucket:
+
+```bash
+gcloud logging buckets update _Default --location=global --retention-days=7
+```
+
+---
+
 ## Validation
 
 `terraform` is not installed on the machine this was written on. **OpenTofu
@@ -447,6 +479,42 @@ JSON
 `POST /ingest` runs the same chunk -> normalize -> embed -> upsert pipeline. It
 takes one document per call, so it is the fix-one-article path; the job above is
 the load-everything path.
+
+## Prometheus, and what "public dashboard" means here
+
+`prometheus.tf` runs Google's collector as a second container in the same
+instance. It scrapes `localhost:8000/metrics` — the endpoint `app/main.py` already
+exposes — and writes to Cloud Monitoring, where the series are queryable with
+PromQL. Scraping from inside is the only shape that works at `min_instances = 0`:
+there is nothing to poll from outside when the service is scaled to zero, and the
+collector lives and dies with the instance it measures.
+
+Cost: no extra Cloud Run charge, because Cloud Run bills the instance and the
+collector shares the 4 vCPU / 8 GiB the app already has. Cloud Monitoring bills
+ingested samples, so `gmp_scrape_interval` is the knob — 30 s over a handful of
+series is cents; 5 s is six times that for a graph nobody reads that closely.
+
+**Cloud Monitoring cannot be made public.** It is IAM-gated, with no share link and
+no anonymous view. The options for a genuinely public dashboard, and why only one
+of them is here:
+
+| Option | Why not / why yes |
+|---|---|
+| Grafana on Cloud Run, anonymous | it has to stay warm to be a *dashboard*, so `min_instances = 1` — tens of dollars a month for a demo that costs cents when idle |
+| Share a Cloud Monitoring dashboard | not a feature; viewing requires `roles/monitoring.viewer` |
+| **`/dashboard.html` in the app** | **what is wired.** Reads the public `/metrics` in the visitor's own browser and renders it — no server, no storage, no cost, and it disappears with the stack |
+
+The trade is honest and stated on the page itself: those are one instance's
+counters since it started, a scale-to-zero resets them, and the only history is
+the time the page has been open. The sidecar is what keeps history — privately, in
+Cloud Monitoring, which is the right split for a demo.
+
+Note also that `/metrics` needs the app-side route added in `app/main.py`: a
+Starlette `Mount` at `/metrics` answers only `/metrics/`, and the bare path — the
+one this collector's `RunMonitoring` config asks for — used to 404 into the static
+file mount.
+
+---
 
 ### Destroying a private-IP stack
 

@@ -458,6 +458,19 @@ route body runs and no counter ever moves. That file explains how the numbers in
 it were produced without a key, and marks which panels are verified against a
 live instance and which are not.
 
+Grafana needs a Prometheus server, which needs something to scrape, which a
+scale-to-zero Cloud Run service is not. So the deployed stack has two halves:
+
+- **`/dashboard.html`** — served by the app itself, no dependencies. It fetches the
+  public `/metrics` in your browser, parses the exposition format and renders
+  requests, cache hit rate, spend, tokens and per-stage p95 (interpolated out of
+  the histogram buckets). Live and public; no history, because there is no time
+  series database behind it — one instance's counters since it started, and a
+  scale-to-zero resets them. The page says so on itself.
+- **A Managed Prometheus sidecar** (`terraform/prometheus.tf`) scrapes the same
+  endpoint from inside the instance and writes to Cloud Monitoring, which does keep
+  history — privately, since Cloud Monitoring is IAM-gated and has no public view.
+
 ## The GCP stack (validated, never applied)
 
 `terraform/` builds Cloud Run (gen2, scale-to-zero) + Cloud SQL Postgres 17 +
