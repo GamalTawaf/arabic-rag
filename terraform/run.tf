@@ -84,9 +84,11 @@ resource "google_cloud_run_v2_service" "rag" {
     vpc_access {
       egress = "PRIVATE_RANGES_ONLY"
 
+      # Names, not `.id`. The API stores the short name, so a full resource path
+      # here means every subsequent plan shows a change that never converges.
       network_interfaces {
-        network    = google_compute_network.vpc.id
-        subnetwork = google_compute_subnetwork.run.id
+        network    = google_compute_network.vpc.name
+        subnetwork = google_compute_subnetwork.run.name
       }
     }
 
@@ -179,13 +181,16 @@ resource "google_cloud_run_v2_service" "rag" {
       # exactly what a startup probe should measure — gating readiness on model
       # load would make every cold start look like a failed deploy.
       #
-      # 5 s initial + 12 x 5 s = up to 65 s to come up. The image is large and
-      # Cloud Run's pull is the slow part.
+      # 5 s initial + 24 x 5 s = up to 125 s to come up, raised from 65 s when
+      # migrations moved into the entrypoint: the port is now opened only after
+      # `alembic upgrade head` returns, so image pull, the first Cloud SQL socket
+      # connect and any DDL share this budget. A revision that would have come up
+      # in 70 s used to be reported as failed to start.
       startup_probe {
         initial_delay_seconds = 5
         period_seconds        = 5
         timeout_seconds       = 3
-        failure_threshold     = 12
+        failure_threshold     = 24
 
         http_get {
           path = "/health"

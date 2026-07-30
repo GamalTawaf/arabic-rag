@@ -30,6 +30,8 @@ import logging
 import re
 import sys
 import time
+from dataclasses import is_dataclass
+from math import isfinite
 from typing import Any
 
 from opentelemetry import trace
@@ -52,6 +54,11 @@ _RESERVED = frozenset(logging.LogRecord("", 0, "", 0, "", (), None).__dict__) | 
 }
 
 _PLAIN_FORMAT = "%(levelname)-5.5s [%(name)s] %(message)s"
+
+# uvicorn's own loggers, which it detaches from the root by default. `uvicorn.error`
+# propagates to `uvicorn`, so resetting the two parents is enough — it is listed
+# anyway, because relying on that inheritance is one refactor away from silence.
+_UVICORN_LOGGERS = ("uvicorn", "uvicorn.error", "uvicorn.access")
 
 # --- Redaction ------------------------------------------------------------
 #
@@ -98,24 +105,78 @@ _REDACTIONS: tuple[tuple[re.Pattern[str], str], ...] = (
         r"\1:[redacted:password]@",
     ),
     (re.compile(r"\b[\w.+\-]+@[\w\-]+\.[\w.\-]{2,}\b"), "[redacted:email]"),
-    # A labelled secret: `token=…`, `Authorization: Bearer …`, `api_key: …`. The
-    # optional `bearer` is what stops the label eating the scheme and leaving the
-    # credential behind it in the clear.
-    (
-        re.compile(
-            r"(?i)\b(bearer|api[_\-]?key|apikey|token|password|passwd|secret|authorization)\b"
-            r"[\"'\s:=]+(?:bearer[\"'\s:=]+)?([^\s\"',}]+)"
-        ),
-        r"\1 [redacted]",
-    ),
+    # Labelled secrets (`token=…`, `Authorization: Bearer …`) are handled by
+    # _redact_labelled below, which checks the value's shape first.
     (re.compile(r"\b\d{3}-\d{2}-\d{4}\b"), "[redacted:id]"),  # SSN
-    (re.compile(r"\b(?:\d{4}[ \-]?){3}\d{4}\b"), "[redacted:card]"),  # 16-digit PAN
+    # Separated groups only — 4-4-4-4 is unambiguous. A run of 16 bare digits is
+    # not (a request id, a nanosecond timestamp), so that case goes through Luhn
+    # below instead of being redacted on length alone.
+    (re.compile(r"\b\d{4}[ \-]\d{4}[ \-]\d{4}[ \-]\d{4}\b"), "[redacted:card]"),
     (
         re.compile(r"(?:\+\d{1,3}[ .\-]?)?\(?\d{3}\)?[ .\-]\d{3}[ .\-]\d{4}\b"),
         "[redacted:phone]",
     ),
-    (re.compile(r"\b\d{3}[ \-]?\d{3}[ \-]?\d{3}\b"), "[redacted:id]"),  # SIN, 9 digits
+    # SIN, separated only. `\b\d{9}\b` matched "served 123456789 bytes" and every
+    # other nine-digit count in the logs; a false positive there deletes the
+    # measurement someone was reading.
+    (re.compile(r"\b\d{3}[ \-]\d{3}[ \-]\d{3}\b"), "[redacted:id]"),
 )
+
+# Labelled secrets are handled separately from _REDACTIONS: the value has to look
+# like a credential before it is destroyed. `(label)\s+(\S+)` alone turned
+# "Authorization header missing" into "Authorization [redacted] missing" —
+# swallowing the diagnosis in the one line someone is reading to find the cause.
+_LABELLED = re.compile(
+    r"(?i)\b(bearer|api[_\-]?key|apikey|token|password|passwd|secret|authorization)\b"
+    r"([\"'\s:=]+)(?:(bearer)([\"'\s:=]+))?([^\s\"',}]+)"
+)
+
+# What "looks like a credential": long enough to be one, and not a word. 12 is
+# under every real key prefix (sk-…, hf_…, ghp_…, a JWT) and over "header",
+# "missing", "expired", "manager".
+_CREDENTIAL_MIN = 12
+_WORDLIKE = re.compile(r"(?i)^[a-z]+$")
+
+
+def _looks_like_credential(value: str) -> bool:
+    if _WORDLIKE.match(value):
+        return False  # "header", "missing", "required"
+    return len(value) >= _CREDENTIAL_MIN or bool(
+        re.search(r"[_\-.]", value) and len(value) >= 8
+    )
+
+
+def _redact_labelled(text: str) -> str:
+    def replace(match: re.Match[str]) -> str:
+        label, gap, bearer, bearer_gap, value = match.groups()
+        if not _looks_like_credential(value):
+            return match.group(0)  # prose, not a key
+        prefix = f"{label}{gap}" + (f"{bearer}{bearer_gap}" if bearer else "")
+        return f"{prefix}[redacted]"
+
+    return _LABELLED.sub(replace, text)
+
+
+def _luhn(digits: str) -> bool:
+    """Card-number checksum. The only thing that tells a PAN from a 16-digit id."""
+    total, parity = 0, len(digits) % 2
+    for index, char in enumerate(digits):
+        digit = int(char)
+        if index % 2 == parity:
+            digit *= 2
+            if digit > 9:
+                digit -= 9
+        total += digit
+    return total % 10 == 0
+
+
+def _redact_bare_cards(text: str) -> str:
+    return re.sub(
+        r"\b\d{13,19}\b",
+        lambda m: "[redacted:card]" if _luhn(m.group(0)) else m.group(0),
+        text,
+    )
+
 
 # Redacted by field name, whatever the value looks like — the half that does not
 # depend on guessing a format. `question` is here because in this domain a
@@ -156,35 +217,83 @@ _DENY_KEYS = frozenset(
 
 def redact(text: str) -> str:
     """Replace anything that looks like a personal identifier or a credential."""
+    text = _redact_labelled(text)
     for pattern, replacement in _REDACTIONS:
         text = pattern.sub(replacement, text)
-    return text
+    return _redact_bare_cards(text)
+
+
+def _key_parts(key: str) -> set[str]:
+    """`access_token` -> {accesstoken, access, token}; `x-api-key` -> {…, apikey}.
+
+    Parts and adjacent pairs, not a substring test: `cardinality` must not read as
+    `card`, and `cache_key` must not read as a key. Whole-key matching alone missed
+    `access_token`, `client_secret` and `x-api-key`, whose values have no shape any
+    regex knows — so they were logged in full.
+    """
+    words = [w.lower() for w in re.findall(r"[A-Za-z0-9]+|[A-Z][a-z0-9]*", key) if w]
+    words = [w for part in words for w in re.findall(r"[a-z]+|[0-9]+", part.lower())]
+    pairs = {words[i] + words[i + 1] for i in range(len(words) - 1)}
+    return {re.sub(r"[^a-z0-9]", "", key.lower()), *words, *pairs}
 
 
 def _is_denied(key: str) -> bool:
-    """`x-api-key`, `API_KEY` and `apiKey` are all the same field name."""
-    return re.sub(r"[^a-z0-9]", "", key.lower()).removeprefix("x") in _DENY_KEYS
+    return bool(_key_parts(key) & _DENY_KEYS)
 
 
-def _scrub(value: Any) -> Any:
-    """Redact strings, walk containers, and stringify anything else first.
+_MAX_DEPTH = 6
 
-    An arbitrary object reaches the log line as its ``repr`` (json's ``default``),
-    so it is repr'd here instead — otherwise a model or an exception could carry
-    an identifier past the patterns inside a field json serialises later.
+
+def _scrub(value: Any, depth: int = 0) -> Any:
+    """Redact strings, walk containers and objects, and never raise.
+
+    Objects are walked rather than repr'd: a pydantic model or a dataclass reaching
+    the repr fallback printed ``question='…'`` in full, which is the one field this
+    module promises never to log. ``_MAX_DEPTH`` is what makes a cyclic structure
+    terminate — a RecursionError here is caught by logging.Handler and the whole
+    record is dropped, so the failure mode is a line that silently never appears.
     """
+    if depth > _MAX_DEPTH:
+        return "[nested too deep]"
     if isinstance(value, str):
         return redact(value)
-    if isinstance(value, bool) or value is None or isinstance(value, (int, float)):
+    if value is None or isinstance(value, (bool, int)):
         return value
+    if isinstance(value, float):
+        # NaN and Infinity are not JSON (RFC 8259). json.dumps emits them bare,
+        # Cloud Logging then fails to parse the line and files it as text —
+        # losing `severity` and the trace link, the two fields this module is for.
+        return value if isfinite(value) else str(value)
     if isinstance(value, dict):
         return {
-            k: "[redacted]" if _is_denied(str(k)) else _scrub(v)
+            str(k): "[redacted]" if _is_denied(str(k)) else _scrub(v, depth + 1)
             for k, v in value.items()
         }
     if isinstance(value, (list, tuple, set)):
-        return [_scrub(v) for v in value]
-    return redact(repr(value))
+        return [_scrub(v, depth + 1) for v in value]
+
+    fields = _object_fields(value)
+    if fields is not None:
+        return _scrub(fields, depth + 1)
+    try:
+        return redact(repr(value))
+    except Exception:  # noqa: BLE001 - a __repr__ that raises must not lose the line
+        return f"[unrepresentable {type(value).__name__}]"
+
+
+def _object_fields(value: Any) -> dict | None:
+    """A model's or dataclass's fields, so _DENY_KEYS applies to them by name."""
+    dump = getattr(value, "model_dump", None)  # pydantic v2
+    if callable(dump):
+        try:
+            return dict(dump())
+        except Exception:  # noqa: BLE001,S110 - a model that will not dump falls through
+            pass  # to __dict__ / repr below; raising here would drop the line
+    if is_dataclass(value) and not isinstance(value, type):
+        return dict(value.__dict__)
+    if hasattr(value, "__dict__") and not isinstance(value, type) and vars(value):
+        return dict(vars(value))
+    return None
 
 
 class JsonFormatter(logging.Formatter):
@@ -235,7 +344,6 @@ def setup_logging(level: str | None = None, json_output: bool | None = None) -> 
     Idempotent by replacing our own handler rather than adding another: uvicorn
     reloads, and a module-level call that appends would print every line twice.
     """
-    resolved_level = (level or settings.log_level).upper()
     as_json = settings.log_json if json_output is None else json_output
 
     root = logging.getLogger()
@@ -248,7 +356,34 @@ def setup_logging(level: str | None = None, json_output: bool | None = None) -> 
     )
     handler._arabic_rag = True  # type: ignore[attr-defined]  # marks it as ours to replace
     root.addHandler(handler)
-    root.setLevel(resolved_level)
+    root.setLevel(_resolved_level(level or settings.log_level))
+
+    # Hand uvicorn's loggers to the root handler. uvicorn's LOGGING_CONFIG sets
+    # propagate = False on `uvicorn` and `uvicorn.access` and attaches its own
+    # stream handlers, so without this every request line, every startup line and
+    # every traceback uvicorn prints stays plain text with no severity and no trace
+    # ids — which on Cloud Run is very nearly every line the service emits, because
+    # the app itself logs on only a handful of paths.
+    for name in _UVICORN_LOGGERS:
+        logger = logging.getLogger(name)
+        logger.handlers = []
+        logger.propagate = True
+
+
+def _resolved_level(level: str) -> int:
+    """A typo in LOG_LEVEL must not take the service down.
+
+    ``setup_logging`` runs at ``app.main`` import time, so a raise here means
+    uvicorn never binds a port and the operator reads a startup-probe timeout that
+    says nothing about a log level.
+    """
+    resolved = logging.getLevelName(level.upper())
+    if isinstance(resolved, int):
+        return resolved
+    logging.getLogger(__name__).warning(
+        "unknown LOG_LEVEL %r; falling back to INFO", level
+    )
+    return logging.INFO
 
 
 def _trace_fields(project: str) -> dict[str, str]:

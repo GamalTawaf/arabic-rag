@@ -4,7 +4,7 @@ output "service_url" {
 }
 
 output "database_connection_name" {
-  description = "Cloud SQL connection name (project:region:instance) — the argument to `cloud-sql-proxy` and the path under /cloudsql inside the container."
+  description = "Cloud SQL connection name (project:region:instance) — the path under /cloudsql inside the container. Also `cloud-sql-proxy`'s argument, but the proxy cannot reach this instance: it has no public address (sql.tf)."
   value       = google_sql_database_instance.pg.connection_name
 }
 

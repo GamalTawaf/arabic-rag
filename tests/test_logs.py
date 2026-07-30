@@ -346,3 +346,155 @@ async def test_trace_ids_are_never_redacted(tracer):
     # Assert
     assert "redacted" not in payload["trace_id"]
     assert payload["logging.googleapis.com/spanId"] == payload["span_id"]
+
+
+# --------------------------------------------------------------------------
+# Findings from review — each of these was a real gap, not a hypothetical
+# --------------------------------------------------------------------------
+
+
+def test_uvicorns_own_loggers_reach_our_handler():
+    """uvicorn's LOGGING_CONFIG sets propagate=False on `uvicorn` and
+    `uvicorn.access`, so without intervention not one line uvicorn emits is JSON
+    — which on Cloud Run is nearly every line the service produces."""
+    # Arrange
+    root = logging.getLogger()
+    before = list(root.handlers)
+    for name in ("uvicorn", "uvicorn.access"):
+        logging.getLogger(name).propagate = False
+
+    # Act
+    try:
+        logs.setup_logging(json_output=True)
+
+        # Assert
+        for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+            logger = logging.getLogger(name)
+            assert logger.propagate is True, name
+            assert logger.handlers == [], name
+    finally:
+        root.handlers = before
+
+
+def test_an_unknown_log_level_does_not_kill_the_process():
+    # Arrange: LOG_LEVEL is a bare str in config, so a typo reaches setLevel().
+    # setup_logging runs at app.main import time, so a raise here is a service
+    # that never binds a port and a startup probe that times out saying nothing.
+    root = logging.getLogger()
+    before, before_level = list(root.handlers), root.level
+
+    # Act
+    try:
+        logs.setup_logging(level="TRACE", json_output=True)
+
+        # Assert
+        assert root.level == logging.INFO
+    finally:
+        root.handlers, root.level = before, before_level
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Authorization header missing",
+        "token expired for user bob",
+        "secret manager access denied",
+        "api_key missing from request",
+        "served 123456789 bytes",
+        "request id 1751234567890123 done",
+    ],
+)
+def test_prose_after_a_credential_label_is_not_destroyed(text):
+    # Arrange / Act: the redacted word used to be the diagnosis
+    assert logs.redact(text) == text
+
+
+@pytest.mark.parametrize(
+    "text, leaked",
+    [
+        ("Authorization: Bearer hf_abcdefghijklmnop", "hf_abcdefghijklmnop"),
+        ("api_key=sk-ant-api03-REALSECRETVALUE", "sk-ant-api03-REALSECRETVALUE"),
+        ("token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9", "eyJhbGciOiJIUzI1NiIs"),
+    ],
+)
+def test_credential_shaped_values_are_still_redacted(text, leaked):
+    assert leaked not in logs.redact(text)
+
+
+@pytest.mark.parametrize(
+    "field", ["access_token", "client_secret", "x-api-key", "apiKey"]
+)
+def test_compound_credential_field_names_are_denied(field):
+    # Arrange: a whole-key match missed every one of these, and the *value* has no
+    # shape a regex knows, so it landed in the log line in full
+    payload = emit(record(**{field: "sk-ant-api03-REALSECRETVALUE"}))
+
+    # Assert
+    assert payload[field] == "[redacted]"
+
+
+def test_ordinary_field_names_that_merely_contain_a_denied_word_survive():
+    # Arrange / Act: the fix must not be a substring match
+    payload = emit(record(cardinality=12, cache_key="q:7", tokens_used=140))
+
+    # Assert
+    assert payload["cardinality"] == 12
+    assert payload["cache_key"] == "q:7"
+    assert payload["tokens_used"] == 140
+
+
+def test_objects_are_walked_so_denied_attributes_are_not_repr_leaked():
+    # Arrange: a pydantic model or dataclass hit the repr fallback, which printed
+    # question= in full — the one field the module promises never to log
+    from dataclasses import dataclass
+
+    @dataclass
+    class AskRequest:
+        question: str
+        config: str = "hybrid"
+
+    # Act
+    payload = emit(
+        record(payload=AskRequest(question="my employer withheld my salary"))
+    )
+
+    # Assert
+    assert "withheld my salary" not in json.dumps(payload)
+    assert payload["payload"]["config"] == "hybrid"
+
+
+def test_non_finite_floats_do_not_produce_invalid_json():
+    # Arrange: json.dumps emits bare NaN, which is not JSON — Cloud Logging then
+    # files the entry as text and loses `severity` and the trace link
+    line = logs.JsonFormatter().format(record(cost_usd=float("nan"), rate=float("inf")))
+
+    # Assert
+    assert "NaN" not in line
+    assert json.loads(line)["cost_usd"] == "nan"
+
+
+def test_a_cyclic_extra_value_still_produces_a_line():
+    # Arrange: RecursionError inside format() is swallowed by logging.Handler,
+    # which drops the record entirely — a silent loss, the worst kind
+    cycle: dict = {"name": "loop"}
+    cycle["self"] = cycle
+
+    # Act
+    payload = emit(record("still logged", ctx=cycle))
+
+    # Assert
+    assert payload["message"] == "still logged"
+
+
+def test_a_value_whose_repr_raises_does_not_lose_the_line():
+    # Arrange
+    class Hostile:
+        def __repr__(self):
+            raise RuntimeError("no repr for you")
+
+    # Act
+    payload = emit(record("still logged", thing=Hostile()))
+
+    # Assert
+    assert payload["message"] == "still logged"
+    assert "unrepresentable" in payload["thing"]

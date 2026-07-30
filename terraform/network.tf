@@ -23,7 +23,8 @@ resource "google_compute_network" "vpc" {
 }
 
 # Direct VPC egress hands every Cloud Run instance an address out of this range.
-# /24 rather than the /28 minimum: the ceiling is instances, and a range that
+# /24 rather than the /26 Direct VPC egress asks for (a /28 is the *connector's*
+# floor, not this one's): the ceiling is instances, and a range that
 # fits max_instances today is a range that blocks scaling tomorrow.
 resource "google_compute_subnetwork" "run" {
   name          = "${var.service_name}-run"
@@ -41,7 +42,11 @@ resource "google_compute_subnetwork" "run" {
 # The range Google's side of the peering allocates the database's address from.
 # Reserved, not routed: nothing of ours is deployed into it.
 resource "google_compute_global_address" "psa" {
-  name          = "${var.service_name}-psa"
+  name = "${var.service_name}-psa"
+  # Pinned, not auto-allocated. Left to Google, the allocator can return a /16
+  # that covers run_subnet_cidr (10.8.0.0/24) — and nothing orders these two
+  # creations, so an overlap surfaces as a failed apply against a half-built VPC.
+  address       = "10.100.0.0"
   purpose       = "VPC_PEERING"
   address_type  = "INTERNAL"
   prefix_length = 16
@@ -56,5 +61,11 @@ resource "google_service_networking_connection" "psa" {
   # The documented way to make `terraform destroy` able to remove the peering
   # instead of leaving it behind. It is not a guarantee — a producer connection
   # that still exists will refuse — but without it destroy fails every time.
+  # ABANDON: Terraform removes this from state without calling the API, so the
+  # peering survives — which then blocks deleting the VPC itself. That makes the
+  # `gcloud compute networks peerings delete` step in README.md a MANDATORY part of
+  # every teardown, not a fallback. The alternative (letting Terraform delete the
+  # connection) fails while the SQL instance still exists, which is worse: destroy
+  # stops with the database intact and still billing.
   deletion_policy = "ABANDON"
 }

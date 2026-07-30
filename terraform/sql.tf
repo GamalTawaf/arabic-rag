@@ -79,8 +79,9 @@ resource "google_sql_database_instance" "pg" {
       # messier, and a laptop cannot reach this database at all — not through a
       # flag, not for five minutes. There is deliberately no variable to turn a
       # public address back on, because an escape hatch is a thing someone leaves
-      # open. Schema and corpus load run inside the VPC, as the Cloud Run job in
-      # migrate.tf.
+      # open. Schema runs from the container's own entrypoint
+      # (docker-entrypoint.sh) and the corpus loads over POST /ingest or
+      # scripts/load-corpus.sh — both from inside the VPC. There is no job resource.
       ipv4_enabled = false
 
       private_network = google_compute_network.vpc.id
@@ -88,7 +89,11 @@ resource "google_sql_database_instance" "pg" {
       # Lets the instance be reached over Private Service Connect paths from
       # Google-managed services (the Cloud Run Cloud SQL connector among them)
       # without a public address.
-      enable_private_path_for_google_cloud_services = true
+      # false: this lets *other* Google-managed services (BigQuery and friends)
+      # reach the private IP over Google's backbone without entering this VPC.
+      # Cloud Run already has a route via Direct VPC egress, so the flag buys
+      # nothing here and contradicts "the peering is the only way in".
+      enable_private_path_for_google_cloud_services = false
 
       # Still required even with no public IP: private does not mean plaintext,
       # and anything inside the VPC is a peer, not a trusted one.

@@ -89,6 +89,21 @@ resource "google_cloud_run_v2_service_iam_member" "deployer_developer" {
   member   = "serviceAccount:${google_service_account.deployer[0].email}"
 }
 
+# Use the subnet the revision's vpc_access block names. Cloud Run re-checks
+# compute.subnetworks.use on every revision-creating call, so without this the
+# first CI deploy after the private-IP migration fails PERMISSION_DENIED — the
+# human's own `terraform apply` succeeds on broader credentials and hides it.
+# Scoped to the one subnet: roles/compute.networkUser at project level would let
+# the deployer attach anything to any network here.
+resource "google_compute_subnetwork_iam_member" "deployer_subnet_user" {
+  count = local.oidc_count
+
+  region     = google_compute_subnetwork.run.region
+  subnetwork = google_compute_subnetwork.run.name
+  role       = "roles/compute.networkUser"
+  member     = "serviceAccount:${google_service_account.deployer[0].email}"
+}
+
 # A revision runs *as* the runtime service account, and Cloud Run requires the
 # deployer to hold actAs on it. Bound to that one service account — the
 # project-wide version of this grant is impersonation of everything.
