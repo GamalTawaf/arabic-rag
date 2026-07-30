@@ -13,7 +13,13 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api import ask, health, ingest, stats
 from app.config import settings
+from app.observability.logs import setup_logging
 from app.observability.tracing import metrics_app, setup_tracing
+
+# First, before anything can log: uvicorn installs its own handlers, and a
+# handler added after the first log line means that line is formatted differently
+# from every line after it.
+setup_logging()
 
 app = FastAPI(title=settings.service_name)
 

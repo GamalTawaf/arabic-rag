@@ -18,6 +18,12 @@ locals {
       # Set even when no exporter is configured: it is what a span ends up
       # labelled as if one ever is, and it costs nothing to be right in advance.
       OTEL_SERVICE_NAME = var.service_name
+
+      # Cloud Logging parses stdout/stderr as JSON when it is JSON, and reads
+      # `severity` as the level. GCP_PROJECT is what lets each line name its
+      # trace, so a log entry in the console links to the span tree it came from.
+      LOG_JSON    = "true"
+      GCP_PROJECT = var.project_id
     },
     var.otel_exporter_otlp_endpoint == "" ? {} : {
       OTEL_EXPORTER_OTLP_ENDPOINT = var.otel_exporter_otlp_endpoint
