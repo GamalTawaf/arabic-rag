@@ -199,3 +199,29 @@ variable "github_repo" {
   type        = string
   default     = "GamalTawaf/arabic-rag"
 }
+
+variable "run_subnet_cidr" {
+  description = <<-EOT
+    Range for the subnet Cloud Run egresses from (network.tf). Direct VPC egress
+    takes one address per instance, so this bounds scaling: /24 leaves room, the
+    /28 minimum does not.
+  EOT
+  type        = string
+  default     = "10.8.0.0/24"
+}
+
+variable "db_public_ip" {
+  description = <<-EOT
+    Give Cloud SQL a public endpoint in addition to its private address.
+
+    False, which is the point of the VPC: the database has no internet-facing
+    address at all. There is still no authorized_networks block, so even flipping
+    this to true admits nobody by itself — it exists because a private-only
+    instance cannot be reached from a laptop, and `alembic upgrade head` plus
+    `python -m ingestion ingest` have to run from somewhere. Flip it, run them
+    through the Auth Proxy, flip it back, and the window during which a public
+    address exists is minutes rather than the life of the stack.
+  EOT
+  type        = bool
+  default     = false
+}
