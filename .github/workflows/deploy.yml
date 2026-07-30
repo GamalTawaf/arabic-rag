@@ -39,19 +39,43 @@ jobs:
     # configured on the GitHub environment, not in this file.
     environment: ${{ inputs.environment }}
 
-    # Defaults inline, environment `vars` win where set. None of these are
-    # secrets: a Workload Identity provider path and a service account email are
-    # public-safe — what stops another repository using them is the provider's
-    # attribute_condition (terraform/github_oidc.tf), not their obscurity. Set the
-    # matching vars on a GitHub environment to point this at a different project.
+    # No defaults, deliberately. Every value comes from the environment's `vars`,
+    # and the guard step below fails the run if any is unset. A fallback baked into
+    # this file is how a deploy aimed at a new environment silently lands in the
+    # old project instead — the failure mode is worse than a red run.
+    #
+    # None of these are secrets: a Workload Identity provider path and a service
+    # account email are public-safe. What stops another repository using them is
+    # the provider's attribute_condition (terraform/github_oidc.tf).
     env:
-      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID || 'arabic-rag-demo-gt2' }}
-      GCP_REGION: ${{ vars.GCP_REGION || 'me-central1' }}
-      SERVICE_NAME: ${{ vars.SERVICE_NAME || 'arabic-rag' }}
-      WORKLOAD_IDENTITY_PROVIDER: ${{ vars.WORKLOAD_IDENTITY_PROVIDER || 'projects/656828441186/locations/global/workloadIdentityPools/arabic-rag-github/providers/github' }}
-      DEPLOYER_SERVICE_ACCOUNT: ${{ vars.DEPLOYER_SERVICE_ACCOUNT || 'arabic-rag-deployer@arabic-rag-demo-gt2.iam.gserviceaccount.com' }}
+      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      GCP_REGION: ${{ vars.GCP_REGION }}
+      SERVICE_NAME: ${{ vars.SERVICE_NAME }}
+      WORKLOAD_IDENTITY_PROVIDER: ${{ vars.WORKLOAD_IDENTITY_PROVIDER }}
+      DEPLOYER_SERVICE_ACCOUNT: ${{ vars.DEPLOYER_SERVICE_ACCOUNT }}
 
     steps:
+      # First, before anything costs a minute of runner time. An unset `vars` entry
+      # interpolates to an empty string, so without this the run reaches
+      # `--region ""` and fails somewhere far from the cause.
+      - name: Require environment configuration
+        # The input goes through env, not straight into the script: interpolating
+        # a workflow input into a `run` body is the shape of a shell injection.
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          missing=()
+          for name in GCP_PROJECT_ID GCP_REGION SERVICE_NAME \
+                      WORKLOAD_IDENTITY_PROVIDER DEPLOYER_SERVICE_ACCOUNT; do
+            [[ -n "${!name}" ]] || missing+=("$name")
+          done
+          if (( ${#missing[@]} )); then
+            printf 'Missing variables on environment "%s": %s\n' \
+              "$ENVIRONMENT" "${missing[*]}" >&2
+            echo 'Set them under Settings -> Environments -> variables.' >&2
+            exit 1
+          fi
+
       - uses: actions/checkout@v4
 
       # The image carries torch plus a baked 2.3 GB embedding model. A default

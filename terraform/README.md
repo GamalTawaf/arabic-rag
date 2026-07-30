@@ -379,7 +379,9 @@ Two guards on who may deploy, because either alone failing open is a hole:
 `workflow_dispatch`-only: a live demo that redeploys itself mid-presentation is a
 way to break it in front of someone.
 
-After the first apply, wire the GitHub environment once:
+After the first apply, wire the GitHub environment once. **These variables are
+required** — `deploy.yml` carries no defaults and fails on the first step if any
+is unset:
 
 ```bash
 gh api -X PUT "repos/$REPO/environments/production"
