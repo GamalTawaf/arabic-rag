@@ -455,7 +455,7 @@ Two consequences, both real:
 `ipv4_enabled` is hardcoded `false` — no variable, because an escape hatch is a
 thing someone leaves open. Two consequences follow:
 
-*Schema* is applied by the container itself: `docker-entrypoint.sh` runs
+*Schema* is applied by the container itself: `config/docker-entrypoint.sh` runs
 `alembic upgrade head` before uvicorn starts. **That is a shortcut, not a
 recommendation** — every instance runs it, two cold starts can race, and a failed
 migration takes the revision down. The file says so at length, and names the three

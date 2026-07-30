@@ -53,7 +53,7 @@ EXPOSE 8000
 ## container is the platform front end). Read the comment in that file before
 ## copying this pattern — migrating from the entrypoint is a demo shortcut with
 ## known costs, not a recommendation.
-ENTRYPOINT ["/app/docker-entrypoint.sh"]
+ENTRYPOINT ["/app/config/docker-entrypoint.sh"]
 ## The default command the entrypoint execs. Kept as a CMD so it can be overridden
 ## (`docker run <image> python -m ingestion stats`) while migrations still run first.
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", \

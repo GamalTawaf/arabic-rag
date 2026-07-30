@@ -28,7 +28,9 @@ services:
       - ./config/init-rag-test-db.sql:/docker-entrypoint-initdb.d/01-rag-test.sql:ro
 
   jaeger:
-    image: jaegertracing/all-in-one:1.62
+    ## Three-part tag: jaeger stopped publishing the short `1.62` alias after 1.60,
+    ## so `:1.62` is not a tag and the pull fails with "not found".
+    image: jaegertracing/all-in-one:1.62.0
     ports:
       - "16686:16686"
       - "4317:4317"
