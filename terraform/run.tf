@@ -6,7 +6,11 @@ locals {
   # secret_key_ref below instead.
   plain_env = merge(
     {
-      ENV                       = "production"
+      ENV = "production"
+      # Which generation adapters, in failover order. Only the ones whose key
+      # secret holds a real value will answer; the rest fail over past.
+      PROVIDERS                 = var.generation_providers
+      HF_MODEL                  = var.hf_model
       RERANK_ENABLED            = var.rerank_enabled ? "true" : "false"
       DAILY_SPEND_CAP_USD       = tostring(var.daily_spend_cap_usd)
       ASK_RATE_LIMIT_PER_MINUTE = tostring(var.ask_rate_limit_per_minute)

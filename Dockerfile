@@ -24,17 +24,23 @@ RUN pip install --upgrade pip \
 FROM python:3.12-slim-bookworm
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
-## Weights land here. Left OUT of the image on purpose: bge-m3 + the cross-encoder are
-## ~4.4 GB, which triples the image and slows every deploy, so they download on first
-## use instead. The cost is a slow first request after a scale-to-zero cold start.
-## trade-off: fine for an ephemeral demo. To trade image size for cold-start latency,
-## add a build step here that runs SentenceTransformer("BAAI/bge-m3") to bake them in.
+## Weights land here. The embedder is baked in below; the ~2.2 GB cross-encoder is not,
+## because a Cloud Run instance has no GPU and reranking there measured 3972 ms p95
+## against a 1200 ms allocation (docs/latency-budget.md), so the deployed service runs
+## with RERANK_ENABLED=false and never loads it. Set it true and the first /ask on a
+## cold instance pays that download.
 ENV HF_HOME=/app/.cache/huggingface
 WORKDIR /app
 COPY --from=builder /install /usr/local
+## Bake bge-m3 (~2.3 GB) into the image. Every /ask embeds the query, so without this
+## the first request on a cold instance downloads it from Hugging Face before it can
+## answer — with min_instances = 0 that is every demo's first question. Image size is
+## paid once at deploy; the download would be paid on every scale-from-zero.
+## Its own layer, before `COPY . .`, so editing app code does not re-download it.
+RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('BAAI/bge-m3')"
 COPY . .
-## Non-root. `appuser` needs a writable /app because HF_HOME points inside it and
-## sentence-transformers downloads ~4.4 GB of weights there on the first request.
+## Non-root. `appuser` needs a writable /app because HF_HOME points inside it — the
+## baked embedder is read from there, and anything not baked is downloaded into it.
 RUN useradd --create-home --uid 10001 appuser \
  && mkdir -p "$HF_HOME" \
  && chown -R appuser:appuser /app

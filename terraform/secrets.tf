@@ -13,12 +13,13 @@ locals {
     "database-url"      = "DATABASE_URL"
     "anthropic-api-key" = "ANTHROPIC_API_KEY"
     "google-api-key"    = "GOOGLE_API_KEY"
+    "hf-api-key"        = "HF_API_KEY"
     "ingest-api-key"    = "INGEST_API_KEY"
   }
 
   # Only the LLM keys get a placeholder version. database-url's real value is
   # computed below, because Terraform is the thing that knows the password.
-  llm_secrets = toset(["anthropic-api-key", "google-api-key"])
+  llm_secrets = toset(["anthropic-api-key", "google-api-key", "hf-api-key"])
 }
 
 resource "google_secret_manager_secret" "app" {

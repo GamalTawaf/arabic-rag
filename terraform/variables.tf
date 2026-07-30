@@ -87,15 +87,40 @@ variable "container_memory" {
   default     = "8Gi"
 }
 
+variable "generation_providers" {
+  description = <<-EOT
+    Sets PROVIDERS: the generation adapters in failover order, first is primary.
+    "huggingface" is the deployed default because its key is the one this project
+    actually has; the Anthropic and Gemini secrets exist and hold placeholders,
+    so listing them here without replacing those placeholders buys a 401 per
+    request instead of a failover.
+  EOT
+  type        = string
+  default     = "huggingface"
+}
+
+variable "hf_model" {
+  description = <<-EOT
+    Sets HF_MODEL: the model id the Hugging Face router is asked for. Must be one
+    the router serves and one that answers in Arabic — Qwen2.5-72B-Instruct and
+    CohereLabs/aya-expanse-32b both do. The price used for the spend cap is
+    HF_PRICE_*_USD_PER_MILLION in app/config.py, not a published table; see the
+    note there before trusting the cost figures on /stats.
+  EOT
+  type        = string
+  default     = "Qwen/Qwen2.5-72B-Instruct"
+}
+
 variable "rerank_enabled" {
   description = <<-EOT
-    Sets RERANK_ENABLED on the service. Leave true only if the pushed image
-    installs requirements-models.txt — the committed Dockerfile installs
-    requirements.txt only, which has no torch, so an image built from it as-is
-    cannot embed or rerank. See README.md, "Build and push the image".
+    Sets RERANK_ENABLED on the service. Deployed false: the image has torch, but
+    Cloud Run has no GPU and the cross-encoder measured 3972 ms p95 there against
+    a 1200 ms allocation (docs/latency-budget.md), and the weights are not baked
+    into the image. True costs a 2.2 GB download on the first request of every
+    cold instance plus ~4 s per question, and buys recall@10 0.946 -> 0.965.
   EOT
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "daily_spend_cap_usd" {

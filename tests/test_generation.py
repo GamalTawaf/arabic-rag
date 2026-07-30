@@ -13,6 +13,7 @@ attempts happen, never how long they take.
 from __future__ import annotations
 
 import asyncio
+import json
 
 import anthropic
 import httpx
@@ -36,12 +37,15 @@ from app.generation.providers import (
     GEMINI_PRICES,
     AnthropicProvider,
     GeminiProvider,
+    HuggingFaceProvider,
     available_providers,
     get_provider,
 )
 
 HAIKU = "claude-haiku-4-5"
 FLASH = "gemini-2.5-flash"
+HF_MODEL = "Qwen/Qwen2.5-72B-Instruct"
+HF_BASE = "https://router.huggingface.co/v1"
 MESSAGES = [{"role": "user", "content": "ما هي مدة الإجازة السنوية؟"}]
 SYSTEM = "أجب بالعربية الفصحى."
 
@@ -926,3 +930,231 @@ async def test_stream_forwards_the_usage_callback_to_the_serving_provider():
 
     # Assert
     assert seen == [Usage(input_tokens=10, output_tokens=5, cost_usd=0.25)]
+
+
+# --- Hugging Face router ------------------------------------------------------
+#
+# No SDK doubles here: this adapter speaks the OpenAI-compatible HTTP shape
+# directly, so the seam is an `httpx.MockTransport` and the tests assert on the
+# wire format the router actually returns.
+
+
+def _hf(handler, **kwargs) -> HuggingFaceProvider:
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url=HF_BASE)
+    return HuggingFaceProvider(model=HF_MODEL, api_key="k", client=client, **kwargs)
+
+
+def _hf_body(text: str, prompt: int, completion: int) -> dict:
+    return {
+        "choices": [{"message": {"content": text}, "finish_reason": "stop"}],
+        "usage": {"prompt_tokens": prompt, "completion_tokens": completion},
+    }
+
+
+def _sse(*payloads: dict) -> bytes:
+    lines = [f"data: {json.dumps(p)}\n\n" for p in payloads]
+    return ("".join(lines) + "data: [DONE]\n\n").encode()
+
+
+def _delta(text: str) -> dict:
+    return {"choices": [{"delta": {"content": text}}]}
+
+
+async def test_hf_complete_returns_text_usage_and_attribution():
+    # Arrange
+    seen: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        seen["auth"] = request.headers.get("authorization")
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(200, json=_hf_body("إجازة سنوية", 1000, 200))
+
+    provider = _hf(handler)
+
+    # Act
+    completion = await provider.complete(SYSTEM, MESSAGES, max_tokens=64)
+
+    # Assert
+    assert completion.text == "إجازة سنوية"
+    assert completion.provider == "huggingface"
+    assert completion.model == HF_MODEL
+    assert completion.usage.input_tokens == 1000
+    assert completion.usage.output_tokens == 200
+    # The system prompt becomes a system message, not a prefix on the user turn.
+    assert seen["body"]["messages"][0] == {"role": "system", "content": SYSTEM}
+    assert seen["body"]["messages"][1] == MESSAGES[0]
+    assert seen["body"]["max_tokens"] == 64
+    assert seen["auth"] == "Bearer k"
+    assert seen["url"].endswith("/chat/completions")
+
+
+async def test_hf_complete_prices_with_the_configured_rate():
+    # Arrange: the rate is settings, not a table - so assert it is actually read.
+    provider = _hf(
+        lambda r: httpx.Response(200, json=_hf_body("x", 1_000_000, 1_000_000)),
+        price=(0.25, 1.50),
+    )
+
+    # Act
+    completion = await provider.complete(SYSTEM, MESSAGES)
+
+    # Assert
+    assert completion.usage.cost_usd == pytest.approx(1.75)
+
+
+async def test_hf_stream_yields_deltas_and_reports_usage_from_the_final_chunk():
+    # Arrange: include_usage puts the totals on a trailing chunk with no choices.
+    body = _sse(
+        _delta("مدة "),
+        _delta("الإجازة"),
+        {"choices": [], "usage": {"prompt_tokens": 800, "completion_tokens": 12}},
+    )
+    provider = _hf(lambda r: httpx.Response(200, content=body))
+    seen: list[Usage] = []
+
+    # Act
+    chunks = [c async for c in provider.stream(SYSTEM, MESSAGES, on_usage=seen.append)]
+
+    # Assert
+    assert chunks == ["مدة ", "الإجازة"]
+    assert seen[0].input_tokens == 800
+    assert seen[0].output_tokens == 12
+    assert seen[0].provider == "huggingface"
+
+
+async def test_hf_stream_asks_the_router_for_usage():
+    # Arrange: without stream_options the router omits usage and every streamed
+    # answer would be billed off a character estimate.
+    seen: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(200, content=_sse(_delta("x")))
+
+    provider = _hf(handler)
+
+    # Act
+    [c async for c in provider.stream(SYSTEM, MESSAGES)]
+
+    # Assert
+    assert seen["body"]["stream"] is True
+    assert seen["body"]["stream_options"] == {"include_usage": True}
+
+
+async def test_hf_stream_without_usage_estimates_rather_than_zero():
+    # Arrange
+    text = "كلمات" * 20
+    provider = _hf(lambda r: httpx.Response(200, content=_sse(_delta(text))))
+    seen: list[Usage] = []
+
+    # Act
+    [c async for c in provider.stream(SYSTEM, MESSAGES, on_usage=seen.append)]
+
+    # Assert
+    assert seen[0].output_tokens == len(text) // CHARS_PER_TOKEN
+    assert seen[0].cost_usd > 0
+
+
+async def test_hf_ignores_keepalive_and_unparsable_sse_lines():
+    # Arrange: the router interleaves ": keep-alive" comments; one bad frame must
+    # not abort a stream that is otherwise fine.
+    body = (
+        b": keep-alive\n\n"
+        + b"data: not-json\n\n"
+        + f"data: {json.dumps(_delta('نعم'))}\n\n".encode()
+        + b"data: [DONE]\n\n"
+    )
+    provider = _hf(lambda r: httpx.Response(200, content=body))
+
+    # Act
+    chunks = [c async for c in provider.stream(SYSTEM, MESSAGES)]
+
+    # Assert
+    assert chunks == ["نعم"]
+
+
+@pytest.mark.parametrize(
+    "status,kind",
+    [
+        (429, ErrorKind.RATE_LIMIT),
+        (500, ErrorKind.SERVER),
+        (503, ErrorKind.SERVER),
+        (401, ErrorKind.FATAL),
+        (400, ErrorKind.FATAL),
+    ],
+)
+async def test_hf_translates_status_codes_to_kinds(status, kind):
+    # Arrange
+    provider = _hf(lambda r: httpx.Response(status, text="nope"))
+
+    # Act / Assert
+    with pytest.raises(ProviderError) as excinfo:
+        await provider.complete(SYSTEM, MESSAGES)
+    assert excinfo.value.kind is kind
+
+
+async def test_hf_translates_status_codes_on_the_streaming_path_too():
+    # Arrange: a 429 arriving before the first byte of the body must still be a
+    # classified ProviderError, not an unhandled httpx error mid-generator.
+    provider = _hf(lambda r: httpx.Response(429, text="slow down"))
+
+    # Act / Assert
+    with pytest.raises(ProviderError) as excinfo:
+        [c async for c in provider.stream(SYSTEM, MESSAGES)]
+    assert excinfo.value.kind is ErrorKind.RATE_LIMIT
+
+
+@pytest.mark.parametrize(
+    "exc,kind",
+    [
+        (httpx.ReadTimeout("slow"), ErrorKind.TIMEOUT),
+        (httpx.ConnectError("down"), ErrorKind.CONNECTION),
+    ],
+)
+async def test_hf_translates_transport_errors(exc, kind):
+    # Arrange
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise exc
+
+    provider = _hf(handler)
+
+    # Act / Assert
+    with pytest.raises(ProviderError) as excinfo:
+        await provider.complete(SYSTEM, MESSAGES)
+    assert excinfo.value.kind is kind
+
+
+async def test_hf_treats_a_malformed_200_as_a_server_error():
+    # Arrange: a 200 whose body is not the promised shape should fail over, not
+    # surface as a 500 while a healthy provider sits unused.
+    provider = _hf(lambda r: httpx.Response(200, json={"choices": []}))
+
+    # Act / Assert
+    with pytest.raises(ProviderError) as excinfo:
+        await provider.complete(SYSTEM, MESSAGES)
+    assert excinfo.value.kind is ErrorKind.SERVER
+
+
+def test_hf_requires_an_api_key():
+    # Act / Assert
+    with pytest.raises(ValueError, match="HF_API_KEY"):
+        HuggingFaceProvider(api_key="")
+
+
+def test_hf_is_reachable_through_the_provider_registry():
+    # Arrange / Act
+    provider = get_provider("huggingface", api_key="k")
+
+    # Assert
+    assert provider.name == "huggingface"
+
+
+def test_available_providers_reports_huggingface_when_its_key_is_set(monkeypatch):
+    # Arrange
+    monkeypatch.setattr(settings, "anthropic_api_key", "")
+    monkeypatch.setattr(settings, "google_api_key", "")
+    monkeypatch.setattr(settings, "hf_api_key", "hf_x")
+
+    # Act / Assert
+    assert available_providers() == ["huggingface"]

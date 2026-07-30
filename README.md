@@ -325,8 +325,14 @@ design, not an optimisation:
 - **Spend cap.** Estimated cost is checked *before* the call, against a daily USD
   cap; past it, `/ask` returns 503 with the day's spend, not a silent overrun.
 
-Generation sits behind a two-method `Provider` protocol with Anthropic and Gemini
-adapters. Each adapter classifies its own SDK's failures into one `ErrorKind`, and
+Generation sits behind a two-method `Provider` protocol with three adapters:
+Anthropic, Gemini, and Hugging Face Inference Providers — the last being an
+OpenAI-compatible router in front of open models (`Qwen/Qwen2.5-72B-Instruct` by
+default), added because it is the key this project actually has. It differs from
+the other two in one honest way: HF prices vary by which host the router picks,
+so its rate is `HF_PRICE_*_USD_PER_MILLION` in `app/config.py` rather than a
+published table in the code, and the daily spend cap is only as accurate as that
+setting. Each adapter classifies its own SDK's failures into one `ErrorKind`, and
 the failover policy is a pure function of that: rate-limit and 5xx retry then fail
 over, timeout and connection errors fail over immediately, and a 4xx/auth error
 **does not** fail over — it would fail identically on the next provider, so

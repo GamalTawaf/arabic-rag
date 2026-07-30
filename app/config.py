@@ -24,6 +24,16 @@ class Settings(BaseSettings):
     providers: str = "anthropic,gemini"
     anthropic_model: str = "claude-haiku-4-5-20251001"
     gemini_model: str = "gemini-2.5-flash"
+    # Hugging Face Inference Providers: an OpenAI-compatible router in front of
+    # third-party hosts. Prices are per-model *and* per-routed-host and change
+    # without a published table to check them against, so unlike Anthropic and
+    # Gemini the rate is configuration, not a constant in the code. The default
+    # is an order-of-magnitude estimate for a ~70B open model — set it to your
+    # account's real rate, because the daily spend cap does this arithmetic.
+    hf_model: str = "Qwen/Qwen2.5-72B-Instruct"
+    hf_base_url: str = "https://router.huggingface.co/v1"
+    hf_price_input_usd_per_million: float = 0.60
+    hf_price_output_usd_per_million: float = 0.60
     generation_timeout_s: float = 20.0
     max_context_tokens: int = 6000
 
@@ -43,6 +53,7 @@ class Settings(BaseSettings):
 
     anthropic_api_key: str = ""
     google_api_key: str = ""
+    hf_api_key: str = ""
     openai_api_key: str = ""
     cohere_api_key: str = ""
 

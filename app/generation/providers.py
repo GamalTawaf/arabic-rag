@@ -318,10 +318,211 @@ class GeminiProvider:
         return ProviderError(self.name, ErrorKind.FATAL, f"{type(exc).__name__}: {exc}")
 
 
-_PROVIDERS: dict[str, type] = {"anthropic": AnthropicProvider, "gemini": GeminiProvider}
+class HuggingFaceProvider:
+    """Open models through Hugging Face Inference Providers.
+
+    No SDK: the router is OpenAI-compatible, so this adapter is ~one POST to
+    ``/chat/completions`` and an SSE reader, and `httpx` is already a dependency.
+
+    Two things differ from the other two adapters, both because HF is a *router*
+    in front of third-party hosts rather than a vendor with one price list:
+
+    - **The rate is configuration, not a table.** ``_lookup_price`` deliberately
+      fails on an unpriced model id; that is right for Anthropic and Gemini,
+      whose prices are published per model. Here the same model id costs
+      different amounts depending on which host the router picks, so the rate
+      comes from ``settings.hf_price_*`` and the spend cap is only as honest as
+      that setting.
+    - **Streamed usage needs asking for.** ``stream_options.include_usage`` is
+      what makes the router send a trailing usage frame. Without it a streamed
+      answer is billed off a character estimate, so it is sent unconditionally.
+    """
+
+    name = "huggingface"
+
+    def __init__(
+        self,
+        model: str | None = None,
+        api_key: str | None = None,
+        client: Any = None,
+        base_url: str | None = None,
+        price: tuple[float, float] | None = None,
+    ) -> None:
+        self.model = model or settings.hf_model
+        self._price = price or (
+            settings.hf_price_input_usd_per_million,
+            settings.hf_price_output_usd_per_million,
+        )
+        self._api_key = api_key if api_key is not None else settings.hf_api_key
+        self._base_url = (base_url or settings.hf_base_url).rstrip("/")
+        self._client = client  # test seam; None means build a real httpx client
+        if self._client is None and not self._api_key:
+            raise ValueError(
+                "HuggingFaceProvider needs an API key: set HF_API_KEY in the "
+                "environment or .env (see available_providers())"
+            )
+
+    def price(self) -> tuple[float, float]:
+        return self._price
+
+    def _build_client(self) -> Any:
+        if self._client is None:
+            import httpx
+
+            self._client = httpx.AsyncClient(timeout=settings.generation_timeout_s)
+        return self._client
+
+    def _request(self, system: str, messages: list[dict], max_tokens: int) -> dict:
+        return {
+            "model": self.model,
+            "messages": [{"role": "system", "content": system}, *messages],
+            "max_tokens": max_tokens,
+        }
+
+    @property
+    def _headers(self) -> dict[str, str]:
+        return {"Authorization": f"Bearer {self._api_key}"}
+
+    @property
+    def _url(self) -> str:
+        return f"{self._base_url}/chat/completions"
+
+    async def complete(
+        self, system: str, messages: list[dict], max_tokens: int = 1024
+    ) -> Completion:
+        client = self._build_client()
+        try:
+            response = await client.post(
+                self._url,
+                json=self._request(system, messages, max_tokens),
+                headers=self._headers,
+            )
+            self._raise_for_status(response.status_code)
+            body = response.json()
+        except Exception as exc:
+            raise self._translate(exc) from exc
+        # Shape errors are their own guard: a 200 that is not the promised shape
+        # is an upstream failure that must reach the failover chain as SERVER.
+        try:
+            text = body["choices"][0]["message"]["content"] or ""
+            usage = body.get("usage") or {}
+        except (KeyError, IndexError, TypeError) as exc:
+            raise _malformed(self.name, exc) from exc
+        return Completion(
+            text=text,
+            usage=self._usage_from_payload(usage, text),
+            provider=self.name,
+            model=self.model,
+        )
+
+    async def stream(
+        self,
+        system: str,
+        messages: list[dict],
+        max_tokens: int = 1024,
+        *,
+        on_usage: Callable[[Usage], None] | None = None,
+    ) -> AsyncIterator[str]:
+        client = self._build_client()
+        payload = self._request(system, messages, max_tokens) | {
+            "stream": True,
+            "stream_options": {"include_usage": True},
+        }
+        chunks: list[str] = []
+        usage: dict = {}
+        try:
+            async with client.stream(
+                "POST", self._url, json=payload, headers=self._headers
+            ) as response:
+                self._raise_for_status(response.status_code)
+                async for line in response.aiter_lines():
+                    frame = _sse_frame(line)
+                    if frame is None:
+                        continue
+                    if frame.get("usage"):
+                        usage = frame["usage"]  # trailing frame; totals, not deltas
+                    text = _openai_delta_text(frame)
+                    if text:
+                        chunks.append(text)
+                        yield text
+        except Exception as exc:
+            raise self._translate(exc) from exc
+        if on_usage is not None:
+            on_usage(self._usage_from_payload(usage, "".join(chunks)))
+
+    def _usage_from_payload(self, usage: dict, text: str) -> Usage:
+        input_tokens = usage.get("prompt_tokens") or 0
+        output_tokens = usage.get("completion_tokens") or 0
+        if output_tokens == 0 and text:
+            # trade-off: see CHARS_PER_TOKEN. An estimate, never a silent zero -
+            # a zero here is a spend cap that never fires.
+            output_tokens = len(text) // CHARS_PER_TOKEN
+        return self._usage(input_tokens, output_tokens)
+
+    def _usage(self, input_tokens: int, output_tokens: int) -> Usage:
+        return Usage(
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cost_usd=usage_cost_usd(input_tokens, output_tokens, self._price),
+            provider=self.name,
+            model=self.model,
+        )
+
+    def _raise_for_status(self, status_code: int) -> None:
+        if status_code >= 400:
+            raise ProviderError(
+                self.name, _kind_for_status(status_code), f"HTTP {status_code}"
+            )
+
+    def _translate(self, exc: Exception) -> ProviderError:
+        import httpx
+
+        if isinstance(exc, ProviderError):
+            return exc
+        # TimeoutException is a TransportError subclass - order matters.
+        if isinstance(exc, httpx.TimeoutException):
+            return ProviderError(self.name, ErrorKind.TIMEOUT, "request timed out")
+        if isinstance(exc, httpx.TransportError):
+            return ProviderError(self.name, ErrorKind.CONNECTION, str(exc))
+        return ProviderError(self.name, ErrorKind.FATAL, f"{type(exc).__name__}: {exc}")
 
 
-def get_provider(name: str) -> Provider:
+def _sse_frame(line: str) -> dict | None:
+    """One `data:` line as a dict, or None for anything not worth failing over.
+
+    The router interleaves comment/keep-alive lines and terminates with
+    ``[DONE]``, and a single unparsable frame is not a reason to abort a stream
+    that is otherwise producing tokens.
+    """
+    import json
+
+    if not line.startswith("data:"):
+        return None
+    body = line[len("data:") :].strip()
+    if not body or body == "[DONE]":
+        return None
+    try:
+        frame = json.loads(body)
+    except ValueError:
+        return None
+    return frame if isinstance(frame, dict) else None
+
+
+def _openai_delta_text(frame: dict) -> str:
+    choices = frame.get("choices") or []
+    if not choices:
+        return ""
+    return (choices[0].get("delta") or {}).get("content") or ""
+
+
+_PROVIDERS: dict[str, type] = {
+    "anthropic": AnthropicProvider,
+    "gemini": GeminiProvider,
+    "huggingface": HuggingFaceProvider,
+}
+
+
+def get_provider(name: str, **kwargs: Any) -> Provider:
     """Build one provider by name. Raises ValueError if unknown or keyless."""
     try:
         factory = _PROVIDERS[name]
@@ -329,7 +530,7 @@ def get_provider(name: str) -> Provider:
         raise ValueError(
             f"unknown generation provider {name!r}; expected one of {sorted(_PROVIDERS)}"
         ) from None
-    return factory()
+    return factory(**kwargs)
 
 
 def available_providers() -> list[str]:
@@ -339,6 +540,8 @@ def available_providers() -> list[str]:
         keys.append("anthropic")
     if settings.google_api_key:
         keys.append("gemini")
+    if settings.hf_api_key:
+        keys.append("huggingface")
     return keys
 
 

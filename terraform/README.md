@@ -39,7 +39,7 @@ second.
 | Cloud SQL Postgres 17 | `sql.tf` | `db-f1-micro`, zonal, no backups, no authorized networks, SSL required |
 | Artifact Registry (Docker) | `artifact_registry.tf` | keeps the 5 most recent versions |
 | Pub/Sub topic + push subscription + DLQ | `pubsub.tf` | pushes to `/ingest/pubsub` with an OIDC token |
-| Secret Manager × 3 | `secrets.tf` | `database-url`, `anthropic-api-key`, `google-api-key` |
+| Secret Manager × 5 | `secrets.tf` | `database-url`, `anthropic-api-key`, `google-api-key`, `hf-api-key`, `ingest-api-key` |
 | Two service accounts | `iam.tf` | runtime + Pub/Sub invoker. **Not** the default compute SA |
 | 7 project APIs | `apis.tf` | not disabled on destroy — see the comment there |
 
@@ -51,7 +51,7 @@ roles, and two of them are bound to a single resource rather than the project:
 | `roles/cloudsql.client` | project | Cloud SQL exposes no instance-level binding for it |
 | `roles/cloudtrace.agent` | project | Cloud Trace has no finer resource |
 | `roles/pubsub.subscriber` | **one subscription** | not needed for push; it is the role a future pull worker needs |
-| `roles/secretmanager.secretAccessor` | **each of 3 secrets** | not "every secret in the project" |
+| `roles/secretmanager.secretAccessor` | **each secret, individually** | not "every secret in the project" |
 
 The Pub/Sub invoker SA holds `roles/run.invoker` on one service and nothing else,
 and the Pub/Sub service agent can mint tokens as it — bound to that one service
@@ -145,13 +145,20 @@ whose image does not exist.
 
 ### 2. Replace the LLM API key secrets
 
-Terraform creates `arabic-rag-anthropic-api-key` and `arabic-rag-google-api-key`
-with a placeholder version, because Cloud Run refuses to deploy a revision that
-references a secret with no versions. Until you replace them, the app sees a
-non-empty key, calls Anthropic with it, and returns the 401 rather than the local
-503 that names the missing variable.
+Terraform creates `arabic-rag-anthropic-api-key`, `arabic-rag-google-api-key` and
+`arabic-rag-hf-api-key` with a placeholder version, because Cloud Run refuses to
+deploy a revision that references a secret with no versions. Until you replace
+them, the app sees a non-empty key, calls the provider with it, and returns that
+provider's 401 rather than the local 503 that names the missing variable.
+
+`generation_providers` defaults to `huggingface`, so **the only one that has to be
+real is the HF key**:
 
 ```bash
+printf '%s' "$HF_API_KEY" | \
+  gcloud secrets versions add arabic-rag-hf-api-key --data-file=-
+
+# only if you also list them in generation_providers
 printf '%s' "$ANTHROPIC_API_KEY" | \
   gcloud secrets versions add arabic-rag-anthropic-api-key --data-file=-
 printf '%s' "$GOOGLE_API_KEY" | \
@@ -226,7 +233,7 @@ Expect the first `apply` to take roughly 10–15 minutes; Cloud SQL instance
 creation is almost all of it. `destroy` is quicker.
 
 What `destroy` removes: the Cloud Run service, the Cloud SQL instance **and every
-chunk in it**, both Pub/Sub topics and all three subscriptions, all three secrets,
+chunk in it**, both Pub/Sub topics and all three subscriptions, all five secrets,
 both service accounts, every IAM binding above, and the Artifact Registry
 repository including the pushed image.
 
