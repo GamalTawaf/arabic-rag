@@ -116,7 +116,7 @@ are yours:
 
 ### 1. Build and push the image
 
-The `Dockerfile` installs CPU torch and `sentence-transformers` alongside
+`docker/Dockerfile` installs CPU torch and `sentence-transformers` alongside
 `requirements.txt`, because the service embeds queries with `BAAI/bge-m3` and
 reranks with `BAAI/bge-reranker-v2-m3` (`app/deps.py`, `SERVICE_MODEL_KEY = "bge"`).
 Setting `rerank_enabled = false` would not remove the need — the *embedder* uses
@@ -125,7 +125,7 @@ succeeds inside it.
 
 What the image does **not** carry is the ~4.4 GB of model weights; they download
 on first use, so expect a slow first request after each scale-to-zero cold start.
-The `Dockerfile` comment names the build step that trades image size for cold-start
+The `docker/Dockerfile` comment names the build step that trades image size for cold-start
 latency if that matters more.
 
 Then:
@@ -136,7 +136,7 @@ REGION=me-central1
 IMAGE="$REGION-docker.pkg.dev/$PROJECT/arabic-rag/arabic-rag:latest"
 
 gcloud auth configure-docker "$REGION-docker.pkg.dev"
-docker build --platform linux/amd64 -t "$IMAGE" .   # linux/amd64 matters on Apple Silicon
+docker build -f docker/Dockerfile --platform linux/amd64 -t "$IMAGE" .   # linux/amd64 matters on Apple Silicon
 docker push "$IMAGE"
 ```
 
@@ -415,7 +415,7 @@ Two consequences, both real:
 `ipv4_enabled` is hardcoded `false` — no variable, because an escape hatch is a
 thing someone leaves open. Two consequences follow:
 
-*Schema* is applied by the container itself: `docker-entrypoint.sh` runs
+*Schema* is applied by the container itself: `docker/entrypoint.sh` runs
 `alembic upgrade head` before uvicorn starts. **That is a shortcut, not a
 recommendation** — every instance runs it, two cold starts can race, and a failed
 migration takes the revision down. The file says so at length, and names the three

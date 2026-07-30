@@ -46,6 +46,10 @@ RUN useradd --create-home --uid 10001 appuser \
  && chown -R appuser:appuser /app
 USER appuser
 EXPOSE 8000
+## Built from the repository root, not from this directory:
+##   docker build -f docker/Dockerfile .
+## The COPY paths below are context-relative, so they do not change with this file.
+##
 ## The entrypoint runs `alembic upgrade head` and then execs uvicorn with
 ## --proxy-headers (Cloud Run terminates TLS and puts the caller in
 ## X-Forwarded-For; without it /ask's per-IP rate limit degrades into one shared
@@ -53,4 +57,4 @@ EXPOSE 8000
 ## container is the platform front end). Read the comment in that file before
 ## copying this pattern — migrating from the entrypoint is a demo shortcut with
 ## known costs, not a recommendation.
-ENTRYPOINT ["/app/docker-entrypoint.sh"]
+ENTRYPOINT ["/app/docker/entrypoint.sh"]
