@@ -204,6 +204,34 @@ async def test_store_ignores_an_empty_answer(db_session):
     assert (await db_session.execute(select(QueryCache))).first() is None
 
 
+# The answer that prompted this guard, verbatim from the live service: Qwen
+# emitted two hiragana and a stray ampersand once, `store` took it, and every
+# semantically-equivalent question served those bytes back forever.
+POISONED = "صاحب العمل ملزم بضمان النظافة والتهوية في أماكن العمل،&oその [&المادة 103]."
+
+
+async def test_store_ignores_an_answer_with_characters_from_another_script(db_session):
+    await store(db_session, QUESTION, unit_vector(0), "bge", PIPELINE, POISONED, [])
+
+    assert (await db_session.execute(select(QueryCache))).first() is None
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "الحد الأقصى ثماني ساعات [المادة 73].",  # the ordinary case
+        "تنص الاتفاقية (ILO C189) على ذلك [المادة 4].",  # Latin acronyms are legitimate
+        "لا تقل عن 3 أسابيع — أي ما يعادل ٢١ يوماً… [المادة 79].",  # digits, dashes, ellipsis
+        "الأجر 50% من الأساسي [المادة 100].",
+    ],
+)
+async def test_store_keeps_answers_that_are_merely_arabic_with_punctuation(db_session, answer):
+    await store(db_session, QUESTION, unit_vector(0), "bge", PIPELINE, answer, [])
+
+    row = (await db_session.execute(select(QueryCache))).scalar_one()
+    assert row.answer == answer
+
+
 # -------------------------------------------------------------- validation
 
 

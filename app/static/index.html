@@ -598,14 +598,18 @@ function paintSanad(turn) {
     row.querySelector(".text").textContent = withoutDuplicateHeading(c.excerpt, c.article);
     const doc = row.querySelector(".doc");
     if (c.source_url) {
-      // The law on Al Meezan, not the article: the manifest records LawView URLs
-      // and the portal's per-article ids are not derivable from an article number.
-      // Said plainly in the link text so nobody expects to land on المادة N.
+      // Al Meezan's chapter, not the article: the portal anchors chapters (فصل)
+      // and has no per-article id, so the link lands on the chapter containing
+      // المادة N — a handful of articles, not 145. Laws whose page ships no
+      // contents get the plain law URL, hence the two link texts: promise the
+      // chapter only when there is an anchor to deliver it.
       const a = document.createElement("a");
       a.href = c.source_url;
       a.target = "_blank";
       a.rel = "noreferrer noopener";
-      a.textContent = `${c.doc_id} — النص على الميزان ↗`;
+      a.textContent = c.source_url.includes("#Section_")
+        ? `${c.doc_id} — الفصل على الميزان ↗`
+        : `${c.doc_id} — النص على الميزان ↗`;
       doc.append(a);
     } else {
       doc.textContent = c.doc_id;

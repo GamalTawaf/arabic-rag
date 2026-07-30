@@ -51,6 +51,7 @@ only if the threshold is lowered or the embedder swapped.
 
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -65,8 +66,45 @@ from app.models.chunks import EMBEDDING_DIMS
 from app.models.query_cache import CACHE_DIM, QueryCache
 from ingestion.normalize import normalize_query
 
+logger = logging.getLogger(__name__)
+
 _TOKEN = re.compile(r"\w+")
 _DIGITS = re.compile(r"\d+")
+
+# Codepoint ranges an answer about Qatari labour law can legitimately contain.
+# ASCII covers Latin acronyms (ILO C189), digits, % and punctuation; the Arabic
+# blocks cover the answer itself; General Punctuation covers the ellipsis, the
+# en/em dashes and the bidi marks that Arabic text carries. Anything outside
+# these is not a stylistic choice, it is the generator coming apart.
+_ALLOWED_RANGES = (
+    (0x0000, 0x007F),  # ASCII
+    (0x0600, 0x06FF),  # Arabic
+    (0x0750, 0x077F),  # Arabic Supplement
+    (0x08A0, 0x08FF),  # Arabic Extended-A
+    (0x2000, 0x206F),  # General Punctuation: … – — “ ” LRM/RLM
+    (0xFB50, 0xFDFF),  # Arabic Presentation Forms-A
+    (0xFE70, 0xFEFF),  # Arabic Presentation Forms-B
+)
+
+
+def foreign_scripts(text: str) -> list[str]:
+    """Distinct characters in ``text`` from outside :data:`_ALLOWED_RANGES`.
+
+    Empty list means the text is plausible Arabic legal prose. This is a
+    *corruption* check, not a quality one: it catches a model emitting hiragana
+    mid-sentence, and deliberately says nothing about an answer that is fluent
+    Arabic and wrong.
+
+    # ponytail: an allow-list of scripts, not a model-output validator. It would
+    # not have caught the stray "&" that came with the hiragana, because "&" is
+    # legal ASCII. Upgrade path if garbling recurs in-script: check the answer's
+    # citation markers against the citations actually retrieved.
+    """
+    return [
+        ch
+        for ch in dict.fromkeys(text)
+        if not any(lo <= ord(ch) <= hi for lo, hi in _ALLOWED_RANGES)
+    ]
 
 # Written in *normalized* form (see ingestion.normalize: ة->ه, ى->ي, hamza
 # seats folded), because guard_key compares tokens of the normalized query.
@@ -222,7 +260,7 @@ async def store(
     answer: str,
     citations: list[object],
 ) -> None:
-    """Cache an answer. Silently ignores an empty answer — never cache a failure.
+    """Cache an answer. Ignores an empty or corrupted answer — never cache a failure.
 
     # trade-off: append-only, no TTL and no invalidation on re-ingestion, so a
     # corpus update leaves stale answers behind. Acceptable while the corpus is a
@@ -231,6 +269,16 @@ async def store(
     """
     vector = _check(query_vec, model_key)
     if not answer.strip():
+        return
+
+    foreign = foreign_scripts(answer)
+    if foreign:
+        # Loud, because this is the only signal that the generator misfired: the
+        # request itself still succeeds and the user still gets this answer once.
+        logger.warning(
+            "not caching an answer containing characters from another script: %s",
+            " ".join(f"U+{ord(ch):04X} {ch!r}" for ch in foreign),
+        )
         return
 
     session.add(

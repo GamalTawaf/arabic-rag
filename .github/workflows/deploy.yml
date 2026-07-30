@@ -115,8 +115,15 @@ jobs:
 
       - name: Deploy the revision
         run: |
+          # --container is not optional here, it is the whole safety property.
+          # The service runs two containers (app + the Managed Prometheus
+          # collector, terraform/prometheus.tf). An unscoped --image resolves to
+          # whichever container has a ports block, which today is `app` only
+          # because the collector deliberately has none — name the target rather
+          # than inherit that. Non-container flags must precede --container.
           gcloud run services update "$SERVICE_NAME" \
             --region "$GCP_REGION" \
+            --container app \
             --image "$IMAGE:${{ github.sha }}"
 
       # Fails the job if the new revision is not serving. Without this the deploy
@@ -128,3 +135,51 @@ jobs:
           echo "deployed: $url"
           curl -fsS --retry 5 --retry-delay 5 --retry-all-errors "$url/health"
           curl -fsS "$url/stats" | head -c 400
+
+      # /health passes whether or not the collector survived the update, so a
+      # deploy that dropped the sidecar would look green and go quiet instead of
+      # red. Assert the container is still there by name. If the sidecar is
+      # intentionally off (enable_prometheus_sidecar = false in terraform), this
+      # step is what you delete — not the --container flag above.
+      - name: Prometheus sidecar survived
+        run: |
+          containers=$(gcloud run services describe "$SERVICE_NAME" \
+                         --region "$GCP_REGION" \
+                         --format='value(spec.template.spec.containers[].name)')
+          echo "containers: $containers"
+          echo "CONTAINERS=$containers" >> "$GITHUB_ENV"
+          case ",${containers//;/,}," in
+            *,collector,*) ;;
+            *) echo "::error::collector container missing from the served revision"; exit 1 ;;
+          esac
+
+      # if: always() — a failed deploy is when you most need to know which sha
+      # was aimed at which project, and whether it got as far as serving.
+      - name: Summary
+        if: always()
+        shell: bash
+        run: |
+          url=$(gcloud run services describe "$SERVICE_NAME" \
+                  --region "$GCP_REGION" --format='value(status.url)' 2>/dev/null || true)
+          revision=$(gcloud run services describe "$SERVICE_NAME" \
+                       --region "$GCP_REGION" \
+                       --format='value(status.latestReadyRevisionName)' 2>/dev/null || true)
+          {
+            echo "## deploy — ${{ inputs.environment }}"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| result | ${{ job.status }} |"
+            echo "| commit | \`${{ github.sha }}\` |"
+            echo "| image | \`$IMAGE:${{ github.sha }}\` |"
+            echo "| project · region | \`$GCP_PROJECT_ID\` · \`$GCP_REGION\` |"
+            echo "| serving revision | \`${revision:-unknown}\` |"
+            echo "| containers | \`${CONTAINERS:-not reached}\` |"
+            echo "| url | ${url:-unknown} |"
+            echo
+            echo "Roll back with:"
+            echo '```'
+            echo "gcloud run services update $SERVICE_NAME --region $GCP_REGION \\"
+            echo "  --container app --image $IMAGE:<previous-sha>"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

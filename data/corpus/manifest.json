@@ -12,7 +12,247 @@
       "fetched_date": "2026-07-24",
       "article_count": 164,
       "start_marker": "نحن حمد بن خليفة آل ثاني أمير دولة قطر،",
-      "end_marker": "الرجاء عدم اعتبار المادة المعروضة أعلاه رسمية"
+      "end_marker": "الرجاء عدم اعتبار المادة المعروضة أعلاه رسمية",
+      "sections": [
+        {
+          "anchor": "Section_12634",
+          "label": "مواد الإصدار (1-4)",
+          "first_article": 1,
+          "last_article": 4,
+          "preamble": true
+        },
+        {
+          "anchor": "Section_12635",
+          "label": "الفصل الأول (1-10)",
+          "first_article": 1,
+          "last_article": 10,
+          "preamble": false
+        },
+        {
+          "anchor": "Section_12636",
+          "label": "تعاريف وأحكام عامة (1-10)",
+          "first_article": 1,
+          "last_article": 10,
+          "preamble": false
+        },
+        {
+          "anchor": "Section_12637",
+          "label": "الفصل الثاني (11-17)",
+          "first_article": 11,
+          "last_article": 17,
+          "preamble": false
+        },
+        {
+          "anchor": "Section_12638",
+          "label": "التدريب المهني (11-17)",
+          "first_article": 11,
+          "last_article": 17,
+          "preamble": false
+        },
+        {
+          "anchor": "Section_12639",
+          "label": "الفصل الثالث (18-37)",
+          "first_article": 18,
+          "last_article": 37,
+          "preamble": false
+        },
+        {
+          "anchor": "Section_12640",
+          "label": "تنظيم استخدام العمال (18-37)",
+          "first_article": 18,
+          "last_article": 37,
+          "preamble": false
+        },
+        {
+          "anchor": "Section_12641",
+          "label": "الفصل الرابع (38-57)",
+          "first_article": 38,
+          "last_article": 57,
+          "preamble": false
+        },
+        {
+          "anchor": "Section_12642",
+          "label": "علاقة العمل الفردية (38-57)",
+          "first_article": 38,
+          "last_article": 57,
+          "preamble": false
+        },
+        {
+          "anchor": "Section_12643",
+          "label": "الفصل الخامس (58-64)",
+          "first_article": 58,
+          "last_article": 64,
+          "preamble": false
+        },
+        {
+          "anchor": "Section_12644",
+          "label": "سلطة صاحب العمل التأديبية (58-64)",
+          "first_article": 58,
+          "last_article": 64,
+          "preamble": false
+        },
+        {
+          "anchor": "Section_12645",
+          "label": "الفصل السادس (65-72)",
+          "first_article": 65,
+          "last_article": 72,
+          "preamble": false
+        },
+        {
+          "anchor": "Section_12646",
+          "label": "الأجور (65-72)",
+          "first_article": 65,
+          "last_article": 72,
+          "preamble": false
+        },
+        {
+          "anchor": "Section_12647",
+          "label": "الفصل السابع (73-85)",
+          "first_article": 73,
+          "last_article": 85,
+          "preamble": false
+        },
+        {
+          "anchor": "Section_12648",
+          "label": "تنظيم وقت العمل والإجازات (73-85)",
+          "first_article": 73,
+          "last_article": 85,
+          "preamble": false
+        },
+        {
+          "anchor": "Section_12649",
+          "label": "الفصل الثامن (86-92)",
+          "first_article": 86,
+          "last_article": 92,
+          "preamble": false
+        },
+        {
+          "anchor": "Section_12650",
+          "label": "تشغيل الأحداث (86-92)",
+          "first_article": 86,
+          "last_article": 92,
+          "preamble": false
+        },
+        {
+          "anchor": "Section_12651",
+          "label": "الفصل التاسع (93-98)",
+          "first_article": 93,
+          "last_article": 98,
+          "preamble": false
+        },
+        {
+          "anchor": "Section_12652",
+          "label": "تشغيل النساء (93-98)",
+          "first_article": 93,
+          "last_article": 98,
+          "preamble": false
+        },
+        {
+          "anchor": "Section_12653",
+          "label": "الفصل العاشر (99-107)",
+          "first_article": 99,
+          "last_article": 107,
+          "preamble": false
+        },
+        {
+          "anchor": "Section_12654",
+          "label": "السلامة والصحة المهنية والرعاية الاجتماعية (99-107)",
+          "first_article": 99,
+          "last_article": 107,
+          "preamble": false
+        },
+        {
+          "anchor": "Section_12655",
+          "label": "الفصل الحادي عشر (108-115)",
+          "first_article": 108,
+          "last_article": 115,
+          "preamble": false
+        },
+        {
+          "anchor": "Section_12656",
+          "label": "إصابات العمل والتعويض عنها (108-115)",
+          "first_article": 108,
+          "last_article": 115,
+          "preamble": false
+        },
+        {
+          "anchor": "Section_18315",
+          "label": "الفصل الحادي عشر مكرراً -الفصل في المنازعات العمالية الفردية (115-115)",
+          "first_article": 115,
+          "last_article": 115,
+          "preamble": false
+        },
+        {
+          "anchor": "Section_12657",
+          "label": "الفصل الثاني عشر (116-123)",
+          "first_article": 116,
+          "last_article": 123,
+          "preamble": false
+        },
+        {
+          "anchor": "Section_12658",
+          "label": "التنظيمات العمالية (116-123)",
+          "first_article": 116,
+          "last_article": 123,
+          "preamble": false
+        },
+        {
+          "anchor": "Section_12659",
+          "label": "الفصل الثالث عشر (124-127)",
+          "first_article": 124,
+          "last_article": 127,
+          "preamble": false
+        },
+        {
+          "anchor": "Section_12660",
+          "label": "اللجان المشتركة والتفاوض الجماعي والاتفاقات المشتركة (124-127)",
+          "first_article": 124,
+          "last_article": 127,
+          "preamble": false
+        },
+        {
+          "anchor": "Section_12661",
+          "label": "الفصل الرابع عشر (128-134)",
+          "first_article": 128,
+          "last_article": 134,
+          "preamble": false
+        },
+        {
+          "anchor": "Section_12662",
+          "label": "المنازعات الجماعية (128-134)",
+          "first_article": 128,
+          "last_article": 134,
+          "preamble": false
+        },
+        {
+          "anchor": "Section_12663",
+          "label": "الفصل الخامس عشر (135-142)",
+          "first_article": 135,
+          "last_article": 142,
+          "preamble": false
+        },
+        {
+          "anchor": "Section_12664",
+          "label": "تفتيش العمل (135-142)",
+          "first_article": 135,
+          "last_article": 142,
+          "preamble": false
+        },
+        {
+          "anchor": "Section_12665",
+          "label": "الفصل السادس عشر (143-148)",
+          "first_article": 143,
+          "last_article": 148,
+          "preamble": false
+        },
+        {
+          "anchor": "Section_12666",
+          "label": "العقوبات (143-148)",
+          "first_article": 143,
+          "last_article": 148,
+          "preamble": false
+        }
+      ]
     },
     {
       "doc_id": "qatar-domestic-workers-law-15-2017",
@@ -24,7 +264,8 @@
       "fetched_date": "2026-07-24",
       "article_count": 24,
       "start_marker": "نحن تميم بن حمد آل ثاني أمير دولة قطر،",
-      "end_marker": "الرجاء عدم اعتبار المادة المعروضة أعلاه رسمية"
+      "end_marker": "الرجاء عدم اعتبار المادة المعروضة أعلاه رسمية",
+      "sections": []
     },
     {
       "doc_id": "qatar-minimum-wage-law-17-2020",
@@ -36,7 +277,16 @@
       "fetched_date": "2026-07-24",
       "article_count": 8,
       "start_marker": "نحن تميم بن حمد آل ثاني أمير دولة قطر،",
-      "end_marker": "الرجاء عدم اعتبار المادة المعروضة أعلاه رسمية"
+      "end_marker": "الرجاء عدم اعتبار المادة المعروضة أعلاه رسمية",
+      "sections": [
+        {
+          "anchor": "Section_19418",
+          "label": "المواد (1-8)",
+          "first_article": 1,
+          "last_article": 8,
+          "preamble": false
+        }
+      ]
     },
     {
       "doc_id": "qatar-heat-stress-decision-17-2021",
@@ -48,7 +298,16 @@
       "fetched_date": "2026-07-24",
       "article_count": 10,
       "start_marker": "وزير التنمية الإدارية والعمل والشؤون الاجتماعية،",
-      "end_marker": "الرجاء عدم اعتبار المادة المعروضة أعلاه رسمية"
+      "end_marker": "الرجاء عدم اعتبار المادة المعروضة أعلاه رسمية",
+      "sections": [
+        {
+          "anchor": "Section_19567",
+          "label": "المواد (1-10)",
+          "first_article": 1,
+          "last_article": 10,
+          "preamble": false
+        }
+      ]
     },
     {
       "doc_id": "qatar-labour-dispute-committees-decision-6-2018",
@@ -60,7 +319,16 @@
       "fetched_date": "2026-07-24",
       "article_count": 20,
       "start_marker": "مجلس الوزراء،",
-      "end_marker": "الرجاء عدم اعتبار المادة المعروضة أعلاه رسمية"
+      "end_marker": "الرجاء عدم اعتبار المادة المعروضة أعلاه رسمية",
+      "sections": [
+        {
+          "anchor": "Section_17989",
+          "label": "المواد (1-20)",
+          "first_article": 1,
+          "last_article": 20,
+          "preamble": false
+        }
+      ]
     }
   ]
 }
