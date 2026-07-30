@@ -46,7 +46,7 @@ jobs:
     # matching vars on a GitHub environment to point this at a different project.
     env:
       GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID || 'arabic-rag-demo-gt2' }}
-      REGION: ${{ vars.REGION || 'me-central1' }}
+      GCP_REGION: ${{ vars.GCP_REGION || 'me-central1' }}
       SERVICE_NAME: ${{ vars.SERVICE_NAME || 'arabic-rag' }}
       WORKLOAD_IDENTITY_PROVIDER: ${{ vars.WORKLOAD_IDENTITY_PROVIDER || 'projects/656828441186/locations/global/workloadIdentityPools/arabic-rag-github/providers/github' }}
       DEPLOYER_SERVICE_ACCOUNT: ${{ vars.DEPLOYER_SERVICE_ACCOUNT || 'arabic-rag-deployer@arabic-rag-demo-gt2.iam.gserviceaccount.com' }}
@@ -70,12 +70,12 @@ jobs:
       - uses: google-github-actions/setup-gcloud@v2
 
       - name: Authenticate Docker to Artifact Registry
-        run: gcloud auth configure-docker "$REGION-docker.pkg.dev" --quiet
+        run: gcloud auth configure-docker "$GCP_REGION-docker.pkg.dev" --quiet
 
       # Its own step because a job-level `env` entry cannot reference the others.
       - name: Resolve the image path
         run: |
-          echo "IMAGE=$REGION-docker.pkg.dev/$GCP_PROJECT_ID/$SERVICE_NAME/$SERVICE_NAME" \
+          echo "IMAGE=$GCP_REGION-docker.pkg.dev/$GCP_PROJECT_ID/$SERVICE_NAME/$SERVICE_NAME" \
             >> "$GITHUB_ENV"
 
       # Two tags for one build: the sha is what gets deployed and is what a
@@ -92,7 +92,7 @@ jobs:
       - name: Deploy the revision
         run: |
           gcloud run services update "$SERVICE_NAME" \
-            --region "$REGION" \
+            --region "$GCP_REGION" \
             --image "$IMAGE:${{ github.sha }}"
 
       # Fails the job if the new revision is not serving. Without this the deploy
@@ -100,7 +100,7 @@ jobs:
       - name: Smoke test
         run: |
           url=$(gcloud run services describe "$SERVICE_NAME" \
-                  --region "$REGION" --format='value(status.url)')
+                  --region "$GCP_REGION" --format='value(status.url)')
           echo "deployed: $url"
           curl -fsS --retry 5 --retry-delay 5 --retry-all-errors "$url/health"
           curl -fsS "$url/stats" | head -c 400

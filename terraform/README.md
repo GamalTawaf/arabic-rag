@@ -384,7 +384,7 @@ After the first apply, wire the GitHub environment once:
 ```bash
 gh api -X PUT "repos/$REPO/environments/production"
 gh variable set GCP_PROJECT_ID --env production --body "$(terraform output -raw project_id 2>/dev/null || echo "$PROJECT_ID")"
-gh variable set REGION         --env production --body "$REGION"
+gh variable set GCP_REGION     --env production --body "$REGION"
 gh variable set SERVICE_NAME   --env production --body arabic-rag
 gh variable set WORKLOAD_IDENTITY_PROVIDER --env production --body "$(terraform output -raw workload_identity_provider)"
 gh variable set DEPLOYER_SERVICE_ACCOUNT  --env production --body "$(terraform output -raw deployer_service_account)"
