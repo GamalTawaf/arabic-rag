@@ -122,7 +122,7 @@ python -m evals.gate --config dense --model bge   # بوابة الانحدار�
 python -m evals.refusal --sweep --compare 0.15    # مسح حدّ الامتناع
 python -m benchmark.replay --n 30            # بوابة ميزانية الزمن
 
-pytest                                       # 575 ناجحاً، 1 مُتخطّى
+pytest                                       # 662 ناجحاً، 1 مُتخطّى
 ruff check .
 ```
 

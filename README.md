@@ -21,7 +21,7 @@ here (see below). With a key, the same frames stream from Claude or Gemini.
 
 All four phases are built — corpus and ingestion, eval dataset and benchmark,
 the `/ask` service with planning/generation/tracing/caching/spend-cap, and a
-Terraform stack for Cloud Run + Cloud SQL + Pub/Sub. 576 tests, a CI regression
+Terraform stack for Cloud Run + Cloud SQL + Pub/Sub. 663 tests, a CI regression
 gate on every PR, an on-demand dense gate and latency replay.
 
 **Two things have never run, and every claim below is written around that.**
@@ -174,9 +174,9 @@ uvicorn app.main:app --port 8000
 one file, no build step, mounted last in `app/main.py` so it cannot shadow a route.
 
 `docker compose up -d db` creates **two** databases: `rag_db` for development and
-`rag_test` for the suite, via `docker/init-rag-test-db.sql`. That file only runs
+`rag_test` for the suite, via `config/init-rag-test-db.sql`. That file only runs
 on an empty data volume, so if you already had this container before that file
-existed, create it once by hand — otherwise 167 tests skip themselves and
+existed, create it once by hand — otherwise 170 tests skip themselves and
 `pytest` still exits 0:
 
 ```bash
@@ -296,7 +296,7 @@ Tests and lint:
 ```bash
 pytest            # 575 pass, 1 skipped (it loads the 2 GB reranker; set
                   # RERANK_REAL_MODEL=1 to run it). Needs the rag_test database
-                  # above — without it 167 more tests skip and pytest still
+                  # above — without it 170 more tests skip and pytest still
                   # exits 0.
 ruff check .
 ```

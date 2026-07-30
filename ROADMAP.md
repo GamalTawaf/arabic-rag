@@ -8,7 +8,7 @@ Portfolio artifact for AI-engineer roles in the GCC market. The differentiator i
 
 ## Where it stands
 
-575 tests pass, 1 skipped (opt-in real-cross-encoder test). `ruff check .` clean. The eval gate, the latency replay, and the benchmark all run green against real data.
+662 tests pass, 1 skipped (opt-in real-cross-encoder test). `ruff check .` clean. The eval gate, the latency replay, and the benchmark all run green against real data.
 
 Two things have **never** run, and every document in the repo says so: an actual LLM API call (no key on this machine), and `terraform apply` (no GCP credentials).
 
