@@ -47,8 +47,10 @@
   footer { margin-top: 2.5rem; font-size: .8rem; color: var(--slate); }
   /* Same idea as the demo page's masthead nav: the ways out of this page belong at
      the top, where someone looking for them will actually look. */
-  .nav { display: flex; flex-wrap: wrap; gap: 14px; font-size: .8rem; margin-bottom: 1rem; }
-  .nav a { color: var(--slate); text-decoration: none; border-bottom: 1px solid transparent; }
+  /* Ink and a standing underline, matching index.html: slate-on-slate with no rule
+     made these read as labels rather than links. */
+  .nav { display: flex; flex-wrap: wrap; gap: 18px; font-size: .85rem; margin-bottom: 1rem; }
+  .nav a { color: var(--ink); text-decoration: none; border-bottom: 1px solid var(--slate); }
   .nav a:hover { color: var(--rubric); border-bottom-color: var(--rubric); }
   code { font-family: var(--mono); font-size: .85em; }
 </style>

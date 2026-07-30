@@ -258,6 +258,24 @@ async def test_dashboard_page_is_served(client):
     assert "rag_stage_duration_seconds_bucket" in response.text
 
 
+async def test_static_pages_must_be_revalidated_before_reuse(client):
+    # Arrange / Act
+    page = await client.get("/index.html")
+    dashboard = await client.get("/dashboard.html")
+
+    # Assert: without Cache-Control these are heuristically cacheable and Chrome
+    # re-serves them from disk without asking — an edit then stays invisible through
+    # repeated reloads, which reads as a broken deploy. Measured: this happened.
+    assert page.headers["cache-control"] == "no-cache"
+    assert dashboard.headers["cache-control"] == "no-cache"
+    # "no-cache" is revalidate, not don't-store: the ETag still short-circuits.
+    assert page.headers["etag"]
+    unchanged = await client.get(
+        "/index.html", headers={"If-None-Match": page.headers["etag"]}
+    )
+    assert unchanged.status_code == 304
+
+
 def test_metrics_app_is_idempotent():
     # Act
     first, second = tracing.metrics_app(), tracing.metrics_app()
