@@ -1,3 +1,5 @@
+**English** · [العربية](README.ar.md)
+
 # arabic-rag
 
 Retrieval-augmented question answering over Qatari labour legislation, built
