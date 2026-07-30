@@ -51,20 +51,46 @@ jobs:
 
       - run: pip install -r config/requirements/dev.txt
 
+      # `shell: bash` on the teed steps is load-bearing: the default shell is
+      # `bash -e` WITHOUT pipefail, so `cmd | tee log` would report tee's exit
+      # code and a failing check would go green. `shell: bash` is
+      # `bash -eo pipefail`.
       - name: Lint
-        run: ruff check .
+        shell: bash
+        run: ruff check . | tee "$RUNNER_TEMP/ruff.log"
 
       - name: Test
-        run: pytest
+        shell: bash
+        run: pytest | tee "$RUNNER_TEMP/pytest.log"
 
       - name: Audit dependencies
         # Every requirements file, not just the runtime one. config/requirements/models.txt
         # carries torch, sentence-transformers, openai and cohere — the largest
         # dependency surface in the repo — and was previously never scanned.
+        shell: bash
         run: |
           pip-audit -r config/requirements/base.txt \
                     -r config/requirements/dev.txt \
-                    -r config/requirements/models.txt
+                    -r config/requirements/models.txt \
+            | tee "$RUNNER_TEMP/audit.log"
+
+      # if: always() — a red run is exactly when someone reads this. Reads the
+      # tails the steps above already wrote; re-running a check here would be a
+      # second source of truth for whether the job passed.
+      - name: Summary
+        if: always()
+        shell: bash
+        run: |
+          last() { [ -f "$1" ] && tail -n 1 "$1" | tr '|' '/' || echo 'did not run'; }
+          {
+            echo "## ci — lint, tests, dependency audit"
+            echo
+            echo "| check | result |"
+            echo "|---|---|"
+            echo "| ruff | $(last "$RUNNER_TEMP/ruff.log") |"
+            echo "| pytest | $(last "$RUNNER_TEMP/pytest.log") |"
+            echo "| pip-audit | $(last "$RUNNER_TEMP/audit.log") |"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # ---------------------------------------------------------------------------
   # Retrieval regression gate.
@@ -132,10 +158,29 @@ jobs:
         run: python -m ingestion ingest
 
       - name: Corpus sanity check
-        run: python -m ingestion stats
+        shell: bash
+        run: python -m ingestion stats | tee "$RUNNER_TEMP/stats.log"
 
       - name: Gate — lexical recall@10 vs evals/baseline.json
-        run: python -m evals.gate --config lexical
+        shell: bash
+        run: python -m evals.gate --config lexical | tee "$RUNNER_TEMP/gate.log"
+
+      - name: Summary
+        if: always()
+        shell: bash
+        run: |
+          block() {
+            echo "### $1"
+            echo '```'
+            [ -f "$2" ] && cat "$2" || echo 'did not run'
+            echo '```'
+          }
+          {
+            echo "## eval-gate-lexical — FTS recall@10 vs evals/baseline.json"
+            echo
+            block "corpus as ingested" "$RUNNER_TEMP/stats.log"
+            block "lexical gate" "$RUNNER_TEMP/gate.log"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   eval-gate-dense:
     runs-on: ubuntu-latest
@@ -196,7 +241,10 @@ jobs:
         run: python -m ingestion backfill --model "$MODEL_KEY"
 
       - name: Gate — dense recall@10 vs evals/baseline.json
-        run: python -m evals.gate --config dense --model "$MODEL_KEY"
+        shell: bash
+        run: |
+          python -m evals.gate --config dense --model "$MODEL_KEY" \
+            2>&1 | tee "$RUNNER_TEMP/gate.log"
 
       # -----------------------------------------------------------------------
       # Latency budget replay. This job only: it needs pgvector,
@@ -228,12 +276,42 @@ jobs:
       # or to stop shipping the cross-encoder there. terraform/README.md ranks
       # this as the second thing expected to break on deploy.
       # -----------------------------------------------------------------------
+      # 2>&1 because the reason a stage blew its allocation goes to stderr while
+      # the table goes to stdout — the summary needs both or it shows a red run
+      # with no explanation in it.
       - name: Latency replay — plan/embed/cache/retrieve/fuse p95 vs BUDGET
-        run: python -m benchmark.replay --n 30 --config hybrid --model "$MODEL_KEY"
+        shell: bash
+        run: |
+          python -m benchmark.replay --n 30 --config hybrid --model "$MODEL_KEY" \
+            2>&1 | tee "$RUNNER_TEMP/replay.log"
 
       # Informational: records what the cross-encoder costs without a GPU, which
       # is the number the Cloud Run deployment story is missing. Expected to exit
       # 1; read the printed p95, do not treat a failure here as a broken build.
       - name: Latency replay — full hybrid+rerank on CPU (recorded, not gating)
         continue-on-error: true
-        run: python -m benchmark.replay --n 30 --config hybrid+rerank --model "$MODEL_KEY"
+        shell: bash
+        run: |
+          python -m benchmark.replay --n 30 --config hybrid+rerank --model "$MODEL_KEY" \
+            2>&1 | tee "$RUNNER_TEMP/replay-rerank.log"
+
+      - name: Summary
+        if: always()
+        shell: bash
+        run: |
+          block() {
+            echo "### $1"
+            echo '```'
+            [ -f "$2" ] && cat "$2" || echo 'did not run'
+            echo '```'
+          }
+          {
+            echo "## eval-gate-dense — dense recall@10 + latency budget"
+            echo
+            echo "model: \`$MODEL_KEY\` · dispatched by @${{ github.actor }}"
+            echo
+            block "dense gate" "$RUNNER_TEMP/gate.log"
+            block "latency replay — hybrid (gating)" "$RUNNER_TEMP/replay.log"
+            block "latency replay — hybrid+rerank (recorded, never gates)" \
+                  "$RUNNER_TEMP/replay-rerank.log"
+          } >> "$GITHUB_STEP_SUMMARY"

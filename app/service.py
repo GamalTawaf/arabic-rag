@@ -222,7 +222,7 @@ def _citation(hit: Hit) -> Citation:
         article=hit.article,
         score=round(hit.score, 6),
         excerpt=_excerpt(hit.text),
-        source_url=source_url(hit.doc_id),
+        source_url=source_url(hit.doc_id, hit.article),
     )
 
 
@@ -320,7 +320,7 @@ async def _hydrate_citations(
             article=by_id[chunk_id].article,
             score=score,
             excerpt=_excerpt(by_id[chunk_id].text),
-            source_url=source_url(by_id[chunk_id].doc_id),
+            source_url=source_url(by_id[chunk_id].doc_id, by_id[chunk_id].article),
         )
         for chunk_id, score in pairs
         if chunk_id in by_id
