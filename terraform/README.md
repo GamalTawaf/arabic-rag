@@ -423,7 +423,16 @@ better options (a job as an explicit deploy step, a CI migration stage, or a
 maintenance container). It is here because the alternative in a stack this size
 was a whole job resource to run one command.
 
-*Corpus* goes in over HTTP, which needs no path into the VPC at all:
+*Corpus* has two ways in, both idempotent — chunk ids are a pure function of the
+text and rows are upserted `ON CONFLICT DO UPDATE`, so replaying is safe.
+
+The whole corpus at once, from inside the VPC — `scripts/load-corpus.sh` runs
+`alembic upgrade head`, `ingest`, `backfill --model bge` and `stats`, and the
+gcloud invocation that runs it as a one-off Cloud Run job is in the header of that
+file. It uses the service's own image, service account, secret and network, and is
+not a terraform resource on purpose: create it, execute it, delete it.
+
+One document over HTTP, which needs no path into the VPC at all:
 
 ```bash
 URL=$(terraform output -raw service_url)
@@ -435,9 +444,9 @@ curl -sS -X POST "$URL/ingest" -H "x-api-key: $KEY" \
 JSON
 ```
 
-`POST /ingest` runs the same chunk -> normalize -> embed -> upsert pipeline the CLI
-does, and it is idempotent (chunk ids are a pure function of the text, upserted
-`ON CONFLICT DO UPDATE`), so replaying a document is safe.
+`POST /ingest` runs the same chunk -> normalize -> embed -> upsert pipeline. It
+takes one document per call, so it is the fix-one-article path; the job above is
+the load-everything path.
 
 ### Destroying a private-IP stack
 
