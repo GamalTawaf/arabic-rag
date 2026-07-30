@@ -52,3 +52,13 @@ output "destroy_reminder" {
     └──────────────────────────────────────────────────────────────────────┘
   EOT
 }
+
+output "workload_identity_provider" {
+  description = "Value for the deploy workflow's google-github-actions/auth step."
+  value       = var.enable_github_oidc ? google_iam_workload_identity_pool_provider.github[0].name : null
+}
+
+output "deployer_service_account" {
+  description = "Service account GitHub Actions impersonates. No infra rights."
+  value       = var.enable_github_oidc ? google_service_account.deployer[0].email : null
+}

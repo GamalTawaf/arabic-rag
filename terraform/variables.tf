@@ -178,3 +178,24 @@ variable "otel_exporter_otlp_endpoint" {
   type        = string
   default     = ""
 }
+
+variable "enable_github_oidc" {
+  description = <<-EOT
+    Create the Workload Identity pool, provider and deployer service account that
+    let GitHub Actions push images and roll Cloud Run revisions without a
+    service-account key (github_oidc.tf). False makes that file inert.
+  EOT
+  type        = bool
+  default     = true
+}
+
+variable "github_repo" {
+  description = <<-EOT
+    "owner/repo" allowed to federate in. Appears in both the provider's
+    attribute_condition and the impersonation binding, because either one alone
+    being wrong is a hole: without the condition any repository on GitHub can mint
+    a token for the pool.
+  EOT
+  type        = string
+  default     = "GamalTawaf/arabic-rag"
+}

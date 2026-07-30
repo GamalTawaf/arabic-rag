@@ -349,3 +349,47 @@ Ranked by how confident I am it will bite, on a real first apply:
 None of these are reasons not to ship the configuration. They are the list I
 would work through with a project in front of me, written down now so that the
 first person to apply it does not have to rediscover them.
+
+---
+
+## CI deploys, keyless
+
+`github_oidc.tf` creates a Workload Identity pool, a provider locked to one
+GitHub repository, and a `arabic-rag-deployer` service account that
+`.github/workflows/deploy.yml` impersonates. **No service-account key exists** —
+not in the repo, not in GitHub secrets. A leaked key lasts until someone notices;
+a leaked OIDC token is worthless outside the run that minted it.
+
+The split is deliberate:
+
+| | Where it runs | Why |
+|---|---|---|
+| Build image, push, roll a Cloud Run revision | GitHub Actions | Repeatable, needs no local state |
+| `terraform apply` / `destroy` | A laptop | State is local (`versions.tf` has no backend). A CI apply would fight that state or need a bucket this stack does not create. |
+
+What the deployer can do: write to the one Artifact Registry repository,
+`roles/run.developer` on the one service, and `actAs` the runtime service
+account. Not `run.admin` — a role that can set IAM policy on a service is a role
+that can make it public. It cannot create infrastructure, read secret values, or
+reach the database.
+
+Two guards on who may deploy, because either alone failing open is a hole:
+`attribute_condition` on the provider (`assertion.repository == "<repo>"`) and the
+`principalSet` on the impersonation binding. The workflow is
+`workflow_dispatch`-only: a live demo that redeploys itself mid-presentation is a
+way to break it in front of someone.
+
+After the first apply, wire the GitHub environment once:
+
+```bash
+gh api -X PUT "repos/$REPO/environments/production"
+gh variable set GCP_PROJECT_ID --env production --body "$(terraform output -raw project_id 2>/dev/null || echo "$PROJECT_ID")"
+gh variable set REGION         --env production --body "$REGION"
+gh variable set SERVICE_NAME   --env production --body arabic-rag
+gh variable set WORKLOAD_IDENTITY_PROVIDER --env production --body "$(terraform output -raw workload_identity_provider)"
+gh variable set DEPLOYER_SERVICE_ACCOUNT  --env production --body "$(terraform output -raw deployer_service_account)"
+gh workflow run deploy.yml -f environment=production
+```
+
+Add required reviewers to the `production` environment in GitHub's settings if
+the URL will be up long enough for that to matter.

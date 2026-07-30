@@ -1,0 +1,88 @@
+name: Deploy
+
+# Build the image on a native amd64 runner, push it to Artifact Registry, roll a
+# Cloud Run revision. Infrastructure is NOT touched: `terraform apply` stays on a
+# laptop because the state is local (terraform/versions.tf has no backend), and a
+# CI apply against no shared state would either fight that state or silently
+# recreate things. This workflow deploys code, not infra.
+#
+# Auth is keyless via Workload Identity (terraform/github_oidc.tf). There is no
+# service-account JSON key in this repository or in GitHub secrets, by design.
+#
+# Manual trigger only. A public URL that redeploys itself on every push to main is
+# a way to break a live demo while someone is watching it.
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "GitHub environment to deploy to"
+        default: production
+        type: environment
+
+permissions:
+  contents: read
+  id-token: write # the OIDC token; without this the auth step has nothing to trade
+
+concurrency:
+  # One deploy at a time. Two concurrent pushes to the same tag is a race whose
+  # winner decides what production runs.
+  group: deploy-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # Environment gates live here: protection rules, required reviewers and the
+    # vars below are configured on the GitHub environment, not in this file.
+    environment: ${{ inputs.environment }}
+
+    env:
+      IMAGE: ${{ vars.REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.SERVICE_NAME }}/${{ vars.SERVICE_NAME }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # The image carries torch plus a baked 2.3 GB embedding model. A default
+      # ubuntu runner has enough disk only after the preinstalled toolchains go.
+      - name: Reclaim runner disk
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /usr/local/share/boost "$AGENT_TOOLSDIRECTORY"
+          df -h /
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.DEPLOYER_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Authenticate Docker to Artifact Registry
+        run: gcloud auth configure-docker ${{ vars.REGION }}-docker.pkg.dev --quiet
+
+      # Two tags for one build: the sha is what gets deployed and is what a
+      # rollback names, and `latest` is what terraform/run.tf references, so a
+      # later `terraform apply` does not drag the service back to an older image.
+      - name: Build and push
+        run: |
+          docker build \
+            -t "$IMAGE:${{ github.sha }}" \
+            -t "$IMAGE:latest" .
+          docker push "$IMAGE:${{ github.sha }}"
+          docker push "$IMAGE:latest"
+
+      - name: Deploy the revision
+        run: |
+          gcloud run services update ${{ vars.SERVICE_NAME }} \
+            --region "${{ vars.REGION }}" \
+            --image "$IMAGE:${{ github.sha }}"
+
+      # Fails the job if the new revision is not serving. Without this the deploy
+      # is "gcloud exited 0", which is not the same as "the service works".
+      - name: Smoke test
+        run: |
+          url=$(gcloud run services describe ${{ vars.SERVICE_NAME }} \
+                  --region "${{ vars.REGION }}" --format='value(status.url)')
+          echo "deployed: $url"
+          curl -fsS --retry 5 --retry-delay 5 --retry-all-errors "$url/health"
+          curl -fsS "$url/stats" | head -c 400
