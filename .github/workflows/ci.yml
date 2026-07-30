@@ -4,9 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-  # The dense gate downloads a ~2.2 GB model, so it runs nightly and on demand.
-  schedule:
-    - cron: "17 3 * * *"
+  # The dense gate downloads a ~2.2 GB model, so it is on demand only.
   workflow_dispatch:
     inputs:
       model:
@@ -84,8 +82,9 @@ jobs:
   #   and running the dense gate on every PR. Rejected because a ~2.2 GB restore
   #   (plus a ~2 GB torch install) on every push buys one extra failure mode at
   #   several minutes per run; the dense-only surface is small and changes rarely.
-  #   Instead the dense gate runs nightly and on workflow_dispatch, so it is at
-  #   most one day between an embedding regression landing and CI saying so.
+  #   Instead the dense gate is workflow_dispatch only — run it before a release
+  #   or after touching embedding/fusion. Nothing catches a dense regression
+  #   until someone does.
   #
   # Both jobs must be able to FAIL: they ingest a real corpus and re-run the
   # harness. If ingestion produces zero chunks the gate reports recall@10 0.0000
@@ -140,7 +139,7 @@ jobs:
 
   eval-gate-dense:
     runs-on: ubuntu-latest
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch'
 
     services:
       db:
@@ -200,7 +199,7 @@ jobs:
         run: python -m evals.gate --config dense --model "$MODEL_KEY"
 
       # -----------------------------------------------------------------------
-      # Latency budget replay. Nightly only, and only here: it needs pgvector,
+      # Latency budget replay. This job only: it needs pgvector,
       # the ingested corpus and the embedding weights that this job has already
       # paid for. Putting it on the PR job would mean a ~2.2 GB model download
       # per push to gate a wall-clock number.

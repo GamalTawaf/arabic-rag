@@ -22,7 +22,7 @@ here (see below). With a key, the same frames stream from Claude or Gemini.
 All four phases are built — corpus and ingestion, eval dataset and benchmark,
 the `/ask` service with planning/generation/tracing/caching/spend-cap, and a
 Terraform stack for Cloud Run + Cloud SQL + Pub/Sub. 576 tests, a CI regression
-gate on every PR, a nightly dense gate and latency replay.
+gate on every PR, an on-demand dense gate and latency replay.
 
 **Two things have never run, and every claim below is written around that.**
 There is no LLM API key in this environment, so generation is unit-tested
@@ -406,7 +406,7 @@ request.
 
 The CPU column is the load-bearing one for deployment: everything except the
 cross-encoder survives losing the GPU, and the cross-encoder is 4.3x over. That
-is why the nightly CI replay gates `--config hybrid` and records
+is why the CI replay gates `--config hybrid` and records
 `hybrid+rerank` without gating it, and why `BUDGET` was **not** widened to fit
 CPU. The allocations live in one place (`BUDGET` in `benchmark/replay.py`); a
 test fails if the document's copy drifts from it.
@@ -433,11 +433,12 @@ CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) has three jobs:
 |---|---|---|
 | `ci` | push + PR | ruff, pytest against a real pgvector service, pip-audit |
 | `eval-gate-lexical` | push + PR | ingest the committed corpus, gate **lexical** recall@10 |
-| `eval-gate-dense` | nightly 03:17 + dispatch | gate **dense** recall@10, then the latency replay |
+| `eval-gate-dense` | manual dispatch | gate **dense** recall@10, then the latency replay |
 
 The lexical gate needs no model download and still catches regressions in
 normalization, chunking, chunk ids and the generated tsvector — the surface the
-dense path shares. The dense gate needs a 2.2 GB model, so it runs nightly, and
+dense path shares. The dense gate needs a 2.2 GB model, so it is dispatch-only —
+run it before a release or after touching embedding/fusion — and
 the latency replay rides along in that job because it needs the same corpus,
 database and weights. The trade-offs are written out in the workflow file.
 

@@ -204,7 +204,7 @@ recovers a factor of four.
 
 Three consequences, all of them already wired:
 
-1. **CI gates `hybrid`, not `hybrid+rerank`.** The nightly replay in
+1. **CI gates `hybrid`, not `hybrid+rerank`.** The dispatch-only replay in
    `.github/workflows/ci.yml` runs on a CPU-only GitHub runner, so it enforces
    the five stages above the rerank line and runs the full config immediately
    after as a *recorded, non-gating* step. `BUDGET` is not widened to fit CPU —
