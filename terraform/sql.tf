@@ -64,44 +64,35 @@ resource "google_sql_database_instance" "pg" {
     }
 
     ip_configuration {
-      # trade-off: public IP with an EMPTY authorized_networks list, not a private
-      # IP behind Private Service Access.
+      # No public endpoint. With a private IP the question "who can open a socket
+      # to this database" is answered by routing rather than by an
+      # authorized-networks list that a later edit can widen: the only path in is
+      # from inside the VPC (network.tf), which is why Cloud Run gets Direct VPC
+      # egress in run.tf.
       #
-      # This is a judgement call and it is the one place this stack departs from
-      # the obvious "production" answer, so here is the reasoning in full:
+      # This replaces the earlier public-IP-with-nothing-allowed shape. That was
+      # defensible on reachability grounds — an empty authorized_networks list
+      # admits nobody — but it depended on a list staying empty forever, and
+      # defence in depth should not rest on a future edit being careful.
       #
-      # Reachability is already closed. With no authorized networks, no address
-      # on the internet can open a socket to this instance. The only ingress is
-      # the Cloud SQL Auth Proxy, which Cloud Run mounts as a unix socket
-      # (run.tf) and which authenticates with IAM (roles/cloudsql.client, granted
-      # to exactly one service account in iam.tf) over mutual TLS. SSL is
-      # required below, so even a future authorized network could not downgrade.
-      #
-      # What private IP would add: defence in depth if a Cloud SQL authorized-
-      # network entry were ever added carelessly.
-      #
-      # What it would cost: a VPC, a reserved /16 for Private Service Access, and
-      # a google_service_networking_connection. That last resource is a known
-      # destroy hazard — the peering it creates cannot be deleted while the
-      # producer connection exists, and the VPC cannot be deleted while the
-      # peering exists, so `terraform destroy` on this shape routinely ends in a
-      # hand-cleanup. In a stack whose whole promise is a clean destroy, and
-      # which I cannot test because there are no credentials here, shipping a
-      # destroy path I believe is broken is worse than shipping a public IP with
-      # nothing allowed through it.
-      #
-      # Upgrade path if this ever outlives a demo: add a VPC + PSA range +
-      # service networking connection, set ipv4_enabled = false and
-      # private_network, add Direct VPC egress to the Cloud Run template, and
-      # budget an extra ~10 minutes on apply and a manual peering delete on
-      # destroy.
-      #
-      # There is deliberately no `authorized_networks` block below. In this
-      # provider it is a repeatable block, not a list argument, so "none" is
-      # written by saying nothing — which is also the only way to say it that a
-      # future edit cannot weaken by appending one more CIDR to an existing list.
-      ipv4_enabled = true
-      ssl_mode     = "ENCRYPTED_ONLY"
+      # The price, and it is a real one: the peering in network.tf makes destroy
+      # messier, and a laptop cannot reach this database at all — not through a
+      # flag, not for five minutes. There is deliberately no variable to turn a
+      # public address back on, because an escape hatch is a thing someone leaves
+      # open. Schema and corpus load run inside the VPC, as the Cloud Run job in
+      # migrate.tf.
+      ipv4_enabled = false
+
+      private_network = google_compute_network.vpc.id
+
+      # Lets the instance be reached over Private Service Connect paths from
+      # Google-managed services (the Cloud Run Cloud SQL connector among them)
+      # without a public address.
+      enable_private_path_for_google_cloud_services = true
+
+      # Still required even with no public IP: private does not mean plaintext,
+      # and anything inside the VPC is a peer, not a trusted one.
+      ssl_mode = "ENCRYPTED_ONLY"
     }
 
     insights_config {
@@ -112,7 +103,11 @@ resource "google_sql_database_instance" "pg" {
     }
   }
 
-  depends_on = [google_project_service.apis]
+  # The peering must exist before an instance can be given a private address.
+  depends_on = [
+    google_project_service.apis,
+    google_service_networking_connection.psa,
+  ]
 }
 
 resource "google_sql_database" "rag" {

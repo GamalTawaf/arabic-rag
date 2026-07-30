@@ -199,3 +199,13 @@ variable "github_repo" {
   type        = string
   default     = "GamalTawaf/arabic-rag"
 }
+
+variable "run_subnet_cidr" {
+  description = <<-EOT
+    Range for the subnet Cloud Run egresses from (network.tf). Direct VPC egress
+    takes one address per instance, so this bounds scaling: /24 leaves room, the
+    /28 minimum does not.
+  EOT
+  type        = string
+  default     = "10.8.0.0/24"
+}

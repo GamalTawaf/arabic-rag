@@ -65,6 +65,25 @@ resource "google_cloud_run_v2_service" "rag" {
       max_instance_count = var.max_instances
     }
 
+    # Direct VPC egress, not a Serverless VPC Access connector: the connector is
+    # a pair of billed e2-micro instances that would cost more than everything
+    # else in this stack combined and sit idle between demos. Direct egress gives
+    # each instance an address in the run subnet and costs nothing extra.
+    #
+    # PRIVATE_RANGES_ONLY, not ALL_TRAFFIC: RFC1918 destinations go through the
+    # VPC so the database is reachable, and everything public — the Hugging Face
+    # router, Hugging Face model downloads if the image ever needs one — keeps
+    # taking the default internet path. ALL_TRAFFIC would need Cloud NAT to reach
+    # any of that, which is another billed resource to remember to destroy.
+    vpc_access {
+      egress = "PRIVATE_RANGES_ONLY"
+
+      network_interfaces {
+        network    = google_compute_network.vpc.id
+        subnetwork = google_compute_subnetwork.run.id
+      }
+    }
+
     # Cloud SQL Auth Proxy, mounted as a unix socket. No password on the wire, no
     # IP allowlist, IAM-authenticated via roles/cloudsql.client. DATABASE_URL
     # (secrets.tf) points at /cloudsql/<connection_name>.

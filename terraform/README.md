@@ -35,8 +35,10 @@ second.
 
 | Resource | File | Notes |
 |---|---|---|
-| Cloud Run service (gen2) | `run.tf` | `min_instances = 0`, `cpu_idle = false`, startup probe on `/health`, Cloud SQL socket volume |
-| Cloud SQL Postgres 17 | `sql.tf` | `db-f1-micro`, zonal, no backups, no authorized networks, SSL required |
+| Cloud Run service (gen2) | `run.tf` | `min_instances = 0`, `cpu_idle = false`, startup probe on `/health`, Cloud SQL socket volume, Direct VPC egress (`PRIVATE_RANGES_ONLY`) |
+| Cloud SQL Postgres 17 | `sql.tf` | `db-f1-micro`, zonal, no backups, **private IP only**, SSL required |
+| VPC + one subnet | `network.tf` | custom mode, one region; Cloud Run egresses from it |
+| Private Service Access | `network.tf` | reserved /16 + service networking peering for the database's address |
 | Artifact Registry (Docker) | `artifact_registry.tf` | keeps the 5 most recent versions |
 | Pub/Sub topic + push subscription + DLQ | `pubsub.tf` | pushes to `/ingest/pubsub` with an OIDC token |
 | Secret Manager × 5 | `secrets.tf` | `database-url`, `anthropic-api-key`, `google-api-key`, `hf-api-key`, `ingest-api-key` |
@@ -395,3 +397,70 @@ gh workflow run deploy.yml -f environment=production
 
 Add required reviewers to the `production` environment in GitHub's settings if
 the URL will be up long enough for that to matter.
+
+---
+
+## The database has no public address
+
+`network.tf` creates a custom-mode VPC, one regional subnet, a reserved /16 and a
+Private Service Access peering; `sql.tf` sets `ipv4_enabled = false` with `private_network` pointed at that VPC. Cloud Run reaches it with
+Direct VPC egress rather than a Serverless VPC Access connector — a connector is
+two billed instances that would outcost the rest of the stack and idle between
+demos, and `PRIVATE_RANGES_ONLY` means public calls (the Hugging Face router) keep
+the default internet path, so no Cloud NAT is needed.
+
+Two consequences, both real:
+
+**A laptop cannot reach the database, and there is no flag to change that.**
+`ipv4_enabled` is hardcoded `false` — no variable, because an escape hatch is a
+thing someone leaves open. Two consequences follow:
+
+*Schema* is applied by the container itself: `docker-entrypoint.sh` runs
+`alembic upgrade head` before uvicorn starts. **That is a shortcut, not a
+recommendation** — every instance runs it, two cold starts can race, and a failed
+migration takes the revision down. The file says so at length, and names the three
+better options (a job as an explicit deploy step, a CI migration stage, or a
+maintenance container). It is here because the alternative in a stack this size
+was a whole job resource to run one command.
+
+*Corpus* has two ways in, both idempotent — chunk ids are a pure function of the
+text and rows are upserted `ON CONFLICT DO UPDATE`, so replaying is safe.
+
+The whole corpus at once, from inside the VPC — `scripts/load-corpus.sh` runs
+`alembic upgrade head`, `ingest`, `backfill --model bge` and `stats`, and the
+gcloud invocation that runs it as a one-off Cloud Run job is in the header of that
+file. It uses the service's own image, service account, secret and network, and is
+not a terraform resource on purpose: create it, execute it, delete it.
+
+One document over HTTP, which needs no path into the VPC at all:
+
+```bash
+URL=$(terraform output -raw service_url)
+KEY=$(terraform output -raw ingest_api_key)
+curl -sS -X POST "$URL/ingest" -H "x-api-key: $KEY" \
+  -H 'content-type: application/json' \
+  -d @- <<'JSON'
+{"doc_id":"qatar-labour-law-14-2004","title":"...","text":"..."}
+JSON
+```
+
+`POST /ingest` runs the same chunk -> normalize -> embed -> upsert pipeline. It
+takes one document per call, so it is the fix-one-article path; the job above is
+the load-everything path.
+
+### Destroying a private-IP stack
+
+This is the cost the original public-IP shape was avoiding. The peering cannot be
+deleted while a producer connection exists, and the VPC cannot be deleted while
+the peering exists, so `terraform destroy` can stop partway. `deletion_policy =
+"ABANDON"` on the connection is what makes the common case work. If destroy still
+fails on the network:
+
+```bash
+gcloud sql instances delete arabic-rag-pg            # the producer, first
+gcloud compute networks peerings delete servicenetworking-googleapis-com \
+  --network=arabic-rag-vpc
+terraform destroy                                    # then the rest
+```
+
+Budget an extra few minutes for both apply and destroy versus the public-IP shape.
