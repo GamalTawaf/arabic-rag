@@ -76,10 +76,12 @@ resource "google_sql_database_instance" "pg" {
       # defence in depth should not rest on a future edit being careful.
       #
       # The price, and it is a real one: the peering in network.tf makes destroy
-      # messier, and a laptop can no longer reach the database at all. Migrations
-      # and the corpus load happen from inside the VPC, or through a temporary
-      # public endpoint — see db_public_ip below and README.md.
-      ipv4_enabled = var.db_public_ip
+      # messier, and a laptop cannot reach this database at all — not through a
+      # flag, not for five minutes. There is deliberately no variable to turn a
+      # public address back on, because an escape hatch is a thing someone leaves
+      # open. Schema and corpus load run inside the VPC, as the Cloud Run job in
+      # migrate.tf.
+      ipv4_enabled = false
 
       private_network = google_compute_network.vpc.id
 

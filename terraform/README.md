@@ -39,6 +39,7 @@ second.
 | Cloud SQL Postgres 17 | `sql.tf` | `db-f1-micro`, zonal, no backups, **private IP only**, SSL required |
 | VPC + one subnet | `network.tf` | custom mode, one region; Cloud Run egresses from it |
 | Private Service Access | `network.tf` | reserved /16 + service networking peering for the database's address |
+| Cloud Run job | `migrate.tf` | migrate + ingest + backfill from inside the VPC — the only path to the database |
 | Artifact Registry (Docker) | `artifact_registry.tf` | keeps the 5 most recent versions |
 | Pub/Sub topic + push subscription + DLQ | `pubsub.tf` | pushes to `/ingest/pubsub` with an OIDC token |
 | Secret Manager × 5 | `secrets.tf` | `database-url`, `anthropic-api-key`, `google-api-key`, `hf-api-key`, `ingest-api-key` |
@@ -401,8 +402,7 @@ the URL will be up long enough for that to matter.
 ## The database has no public address
 
 `network.tf` creates a custom-mode VPC, one regional subnet, a reserved /16 and a
-Private Service Access peering; `sql.tf` sets `ipv4_enabled = var.db_public_ip`
-(**false**) with `private_network` pointed at that VPC. Cloud Run reaches it with
+Private Service Access peering; `sql.tf` sets `ipv4_enabled = false` with `private_network` pointed at that VPC. Cloud Run reaches it with
 Direct VPC egress rather than a Serverless VPC Access connector — a connector is
 two billed instances that would outcost the rest of the stack and idle between
 demos, and `PRIVATE_RANGES_ONLY` means public calls (the Hugging Face router) keep
@@ -410,20 +410,21 @@ the default internet path, so no Cloud NAT is needed.
 
 Two consequences, both real:
 
-**A laptop cannot reach the database.** `alembic upgrade head` and
-`python -m ingestion ingest` need a path in. Either run them from a VM inside the
-VPC, or open a short window:
+**A laptop cannot reach the database, and there is no flag to change that.**
+`ipv4_enabled` is hardcoded `false` — no variable, because an escape hatch is a
+thing someone leaves open. Schema and corpus load run inside the VPC, as a Cloud
+Run job on the same image (`migrate.tf`):
 
 ```bash
-terraform apply -var db_public_ip=true      # public endpoint, still no authorized_networks
-cloud-sql-proxy "$(terraform output -raw database_connection_name)" --port 5434
-#   ... migrate, ingest, backfill ...
-terraform apply                             # back to private-only
+gcloud run jobs execute arabic-rag-migrate --region me-central1 --wait
 ```
 
-The window is minutes instead of the life of the stack, and even during it there
-is no `authorized_networks` block, so nothing on the internet can open a socket —
-only the IAM-authenticated Auth Proxy.
+That runs `alembic upgrade head && python -m ingestion ingest && python -m
+ingestion backfill --model bge` with the service's own service account, socket and
+secrets. All three steps are idempotent — Alembic skips applied revisions, chunk
+ids are a pure function of the text and upsert, backfill only embeds rows with no
+vector — so re-running after a partial failure is safe. That property is what
+makes a job acceptable as the *only* way in.
 
 ### Destroying a private-IP stack
 
