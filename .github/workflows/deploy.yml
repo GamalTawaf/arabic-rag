@@ -24,10 +24,13 @@ permissions:
   id-token: write # the OIDC token; without this the auth step has nothing to trade
 
 concurrency:
-  # One deploy at a time. Two concurrent pushes to the same tag is a race whose
-  # winner decides what production runs.
+  # One deploy at a time, newest wins: dispatching again supersedes a deploy still
+  # in flight rather than queueing behind it, so the last dispatch is what runs.
+  # An interrupted run can leave a half-pushed image in Artifact Registry —
+  # harmless, the next push resumes the missing layers — and `gcloud run services
+  # update` is server-side, so a revision either rolls out or does not.
   group: deploy-${{ inputs.environment }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   deploy:
