@@ -5,9 +5,12 @@
 #   app/                  the service
 #   ingestion/            imported by app.ingest_worker on the /ingest path
 #   data/                 the corpus, for `python -m ingestion ingest`
-#   alembic/, alembic.ini `alembic upgrade head` before first boot
+#   alembic/              the revisions
+#   config/alembic.ini    read by `alembic -c config/alembic.ini upgrade head`
+#   config/requirements/  read by the builder stage
 #   scripts/              load-corpus.sh, run as a one-off Cloud Run job
-#   requirements*.txt     read by the builder stage
+#   docker-entrypoint.sh  the image's own ENTRYPOINT — excluding it builds a
+#                         container that cannot start
 
 # Virtualenvs — 1 GB of host-platform wheels that must never reach a linux image
 .venv/
@@ -43,10 +46,13 @@ evals/
 docs/
 terraform/
 dashboards/
-docker/
 docker-compose*.yml
 Dockerfile*
 *.md
+
+# config/ is NOT excluded wholesale: alembic.ini and requirements/ are read
+# inside the image. Only the dev-only seed SQL is dropped.
+config/init-rag-test-db.sql
 
 # macOS
 .DS_Store

@@ -8,6 +8,15 @@ class Settings(BaseSettings):
     env: str = "development"
     database_url: str = "postgresql+asyncpg://rag_user:rag_pass@localhost:5433/rag_db"
 
+    # Logging. JSON is off by default because the default reader is a terminal;
+    # LOG_JSON=true is set on Cloud Run, where the reader is Cloud Logging.
+    # gcp_project is what lets a log line name its trace
+    # (logging.googleapis.com/trace); unset, the line still carries plain
+    # trace_id/span_id. See app/observability/logs.py.
+    log_level: str = "INFO"
+    log_json: bool = False
+    gcp_project: str = ""
+
     # Retrieval
     embedding_model: str = "text-embedding-3-large"
     top_k_retrieve: int = 20

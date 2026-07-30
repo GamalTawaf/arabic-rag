@@ -18,6 +18,12 @@ locals {
       # Set even when no exporter is configured: it is what a span ends up
       # labelled as if one ever is, and it costs nothing to be right in advance.
       OTEL_SERVICE_NAME = var.service_name
+
+      # Cloud Logging parses stdout/stderr as JSON when it is JSON, and reads
+      # `severity` as the level. GCP_PROJECT is what lets each line name its
+      # trace, so a log entry in the console links to the span tree it came from.
+      LOG_JSON    = "true"
+      GCP_PROJECT = var.project_id
     },
     var.otel_exporter_otlp_endpoint == "" ? {} : {
       OTEL_EXPORTER_OTLP_ENDPOINT = var.otel_exporter_otlp_endpoint
@@ -94,7 +100,11 @@ resource "google_cloud_run_v2_service" "rag" {
       }
     }
 
+    # Named because the collector sidecar (prometheus.tf) declares a startup
+    # dependency on it by name. A single-container service does not need a name;
+    # a multi-container one does.
     containers {
+      name  = "app"
       image = local.image
 
       ports {
@@ -180,6 +190,42 @@ resource "google_cloud_run_v2_service" "rag" {
         http_get {
           path = "/health"
           port = 8000
+        }
+      }
+    }
+
+    # The Managed Prometheus collector (prometheus.tf). No ports block: only the
+    # ingress container gets one, and this one talks outward to Cloud Monitoring.
+    # No resources block either — Google's own example sets none, and Cloud Run
+    # splits the instance's allocation, so pinning a fraction here would take CPU
+    # from the embedder to guarantee it to a scraper that idles.
+    dynamic "containers" {
+      for_each = var.enable_prometheus_sidecar ? [1] : []
+      content {
+        name  = "collector"
+        image = var.gmp_sidecar_image
+
+        # Start after the app and stop before it, so the last scrape happens while
+        # there is still something to scrape.
+        depends_on = ["app"]
+
+        volume_mounts {
+          name       = "gmp-config"
+          mount_path = "/etc/rungmp"
+        }
+      }
+    }
+
+    dynamic "volumes" {
+      for_each = var.enable_prometheus_sidecar ? [1] : []
+      content {
+        name = "gmp-config"
+        secret {
+          secret = google_secret_manager_secret.gmp_config[0].secret_id
+          items {
+            version = "latest"
+            path    = "config.yaml" # the sidecar reads /etc/rungmp/config.yaml
+          }
         }
       }
     }

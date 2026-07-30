@@ -233,6 +233,31 @@ def test_metrics_app_serves_recorded_metrics():
     assert 'hit="true"' in exposition
 
 
+async def test_metrics_is_served_without_a_trailing_slash(client):
+    """A Mount at "/metrics" matches only "/metrics/", so the bare path needs a
+    route of its own — and the bare path is what every scraper asks for."""
+    # Arrange
+    tracing.metrics_app()
+    tracing.record_request("/ask", "ok")
+
+    # Act
+    response = await client.get("/metrics")
+
+    # Assert
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/plain")
+    assert "rag_requests" in response.text
+
+
+async def test_dashboard_page_is_served(client):
+    # Act
+    response = await client.get("/dashboard.html")
+
+    # Assert: the public metrics view, which reads /metrics from the browser
+    assert response.status_code == 200
+    assert "rag_stage_duration_seconds_bucket" in response.text
+
+
 def test_metrics_app_is_idempotent():
     # Act
     first, second = tracing.metrics_app(), tracing.metrics_app()

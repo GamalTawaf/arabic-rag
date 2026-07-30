@@ -8,12 +8,18 @@ test suite asserts on, because CI and the ``/health`` path must not pay for a
 
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.staticfiles import StaticFiles
 
 from app.api import ask, health, ingest, stats
 from app.config import settings
+from app.observability.logs import setup_logging
 from app.observability.tracing import metrics_app, setup_tracing
+
+# First, before anything can log: uvicorn installs its own handlers, and a
+# handler added after the first log line means that line is formatted differently
+# from every line after it.
+setup_logging()
 
 app = FastAPI(title=settings.service_name)
 
@@ -29,6 +35,19 @@ setup_tracing(app)
 # Prometheus exposition. Mounting is what installs the meter provider, so
 # instruments created earlier in the process start reporting from here on.
 app.mount("/metrics", metrics_app())
+
+
+# …and the same thing at the bare path. A Starlette Mount at "/metrics" matches
+# only "/metrics/…", so "/metrics" fell through to the StaticFiles mount at "/"
+# and answered 404 — which is the path every scraper uses by default, including
+# the Managed Prometheus sidecar's RunMonitoring config (terraform/prometheus.tf)
+# and the dashboard page's fetch. Measured against the deployed service: bare
+# /metrics 404, /metrics/ 200.
+@app.get("/metrics", include_in_schema=False)
+async def metrics() -> Response:
+    from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 # The demo page, last: a mount at "/" swallows every path not already claimed, so
 # it must come after the routers and /metrics or it would shadow them. One static

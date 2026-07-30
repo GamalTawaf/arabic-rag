@@ -38,7 +38,7 @@ set -e
 ## Safe to re-run: chunk ids are a hash of the text and every row is upserted
 ## ON CONFLICT DO UPDATE, so a second run rewrites the same rows.
 
-alembic upgrade head                      # no-op when the service already migrated
+alembic -c config/alembic.ini upgrade head   # no-op when the service already migrated
 python -m ingestion ingest                # data/corpus/ -> chunks
 python -m ingestion backfill --model bge  # the vector column /ask queries
 python -m ingestion stats                 # coverage 1.0, or the corpus is not loaded

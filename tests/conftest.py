@@ -63,7 +63,7 @@ def pg_schema(pg_url):
     # check=False does not suppress) — every DB-backed test errors out. Same
     # breakage for anyone on conda or a venv by another name.
     result = subprocess.run(
-        [sys.executable, "-m", "alembic", "upgrade", "head"],
+        [sys.executable, "-m", "alembic", "-c", "config/alembic.ini", "upgrade", "head"],
         env={**os.environ, "DATABASE_URL": pg_url},
         capture_output=True,
         text=True,

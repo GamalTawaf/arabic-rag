@@ -924,7 +924,7 @@ def main(argv: list[str] | None = None) -> int:
         print(
             f"database error: {type(exc).__name__}: {str(exc).splitlines()[0]}\n"
             "  is Postgres up (docker compose up -d db) and migrated "
-            "(alembic upgrade head) with the corpus ingested and backfilled?",
+            "(alembic -c config/alembic.ini upgrade head) with the corpus ingested and backfilled?",
             file=sys.stderr,
         )
         return 1

@@ -209,3 +209,37 @@ variable "run_subnet_cidr" {
   type        = string
   default     = "10.8.0.0/24"
 }
+
+variable "enable_prometheus_sidecar" {
+  description = <<-EOT
+    Run Google's Managed Service for Prometheus collector alongside the app
+    (prometheus.tf). It scrapes localhost:8000/metrics from inside the instance —
+    the only shape that works when min_instances = 0 — and writes to Cloud
+    Monitoring, where the series are queryable with PromQL.
+
+    Off: /metrics is still exported and still reachable over HTTP; nothing stores
+    it, so there is no history and no alerting.
+  EOT
+  type        = bool
+  default     = true
+}
+
+variable "gmp_scrape_interval" {
+  description = <<-EOT
+    How often the collector scrapes /metrics. This is the cost knob: Cloud
+    Monitoring bills ingested samples, so halving the interval doubles the bill for
+    the same series. 30s is Google's default and is plenty for a demo graph.
+  EOT
+  type        = string
+  default     = "30s"
+}
+
+variable "gmp_sidecar_image" {
+  description = <<-EOT
+    The collector image, pinned. Google publishes it in a public Artifact Registry
+    repo; `:latest` on a container that holds a scrape config is how a working
+    dashboard changes shape without a deploy.
+  EOT
+  type        = string
+  default     = "us-docker.pkg.dev/cloud-ops-agents-artifacts/cloud-run-gmp-sidecar/cloud-run-gmp-sidecar:1.2.0"
+}

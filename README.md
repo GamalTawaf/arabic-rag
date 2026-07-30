@@ -153,14 +153,14 @@ requirements file — everything except embedding and reranking runs without the
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
-pip install -r requirements-dev.txt          # service + tests, no torch
-pip install -r requirements-models.txt       # sentence-transformers + torch (~2 GB)
+pip install -r config/requirements/dev.txt          # service + tests, no torch
+pip install -r config/requirements/models.txt       # sentence-transformers + torch (~2 GB)
 
 cp .env.example .env
 docker compose up -d db                      # pgvector/pgvector:pg17 on :5433
 export DATABASE_URL=postgresql+asyncpg://rag_user:rag_pass@localhost:5433/rag_db
 
-alembic upgrade head
+alembic -c config/alembic.ini upgrade head
 python -m ingestion ingest                   # committed corpus -> 233 chunks
 python -m ingestion stats                    # rows per document, embedding coverage
 
@@ -457,6 +457,19 @@ every panel is empty, because a keyless `/ask` 503s in the dependency before the
 route body runs and no counter ever moves. That file explains how the numbers in
 it were produced without a key, and marks which panels are verified against a
 live instance and which are not.
+
+Grafana needs a Prometheus server, which needs something to scrape, which a
+scale-to-zero Cloud Run service is not. So the deployed stack has two halves:
+
+- **`/dashboard.html`** — served by the app itself, no dependencies. It fetches the
+  public `/metrics` in your browser, parses the exposition format and renders
+  requests, cache hit rate, spend, tokens and per-stage p95 (interpolated out of
+  the histogram buckets). Live and public; no history, because there is no time
+  series database behind it — one instance's counters since it started, and a
+  scale-to-zero resets them. The page says so on itself.
+- **A Managed Prometheus sidecar** (`terraform/prometheus.tf`) scrapes the same
+  endpoint from inside the instance and writes to Cloud Monitoring, which does keep
+  history — privately, since Cloud Monitoring is IAM-gated and has no public view.
 
 ## The GCP stack (validated, never applied)
 

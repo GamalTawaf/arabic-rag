@@ -5,10 +5,10 @@ Stack: FastAPI, SQLAlchemy async (asyncpg), Alembic, Postgres, pytest (async), r
 ## Testing
 
 ```bash
-pip install -r requirements-dev.txt
+pip install -r config/requirements/dev.txt
 pytest              # bare pytest — pytest.ini sets pythonpath=. and asyncio_mode=auto
 ruff check .
-pip-audit -r requirements.txt
+pip-audit -r config/requirements/base.txt
 ```
 
 - Global testing rules (80% coverage, AAA, TDD, unit/integration/e2e) apply, with one

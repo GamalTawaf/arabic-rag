@@ -47,8 +47,11 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
+          # requirements/ lives under config/; setup-python's default glob is
+          # **/requirements.txt, which now matches nothing and errors.
+          cache-dependency-path: config/requirements/*.txt
 
-      - run: pip install -r requirements-dev.txt
+      - run: pip install -r config/requirements/dev.txt
 
       - name: Lint
         run: ruff check .
@@ -57,20 +60,20 @@ jobs:
         run: pytest
 
       - name: Audit dependencies
-        # Every requirements file, not just the runtime one. requirements-models
+        # Every requirements file, not just the runtime one. config/requirements/models.txt
         # carries torch, sentence-transformers, openai and cohere — the largest
         # dependency surface in the repo — and was previously never scanned.
         run: |
-          pip-audit -r requirements.txt \
-                    -r requirements-dev.txt \
-                    -r requirements-models.txt
+          pip-audit -r config/requirements/base.txt \
+                    -r config/requirements/dev.txt \
+                    -r config/requirements/models.txt
 
   # ---------------------------------------------------------------------------
   # Retrieval regression gate.
   #
   # TRADE-OFF (option (a) of the two we considered):
   #   Every PR gates the LEXICAL config, which needs no embedding model — the job
-  #   installs requirements-dev.txt only, ingests the committed corpus, and
+  #   installs config/requirements/dev.txt only, ingests the committed corpus, and
   #   compares recall@10 against evals/baseline.json. That catches regressions in
   #   Arabic normalization, article-boundary chunking, chunk ids, the generated
   #   tsvector and the FTS query — which is where silent breakage actually lives,
@@ -117,11 +120,14 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
+          # requirements/ lives under config/; setup-python's default glob is
+          # **/requirements.txt, which now matches nothing and errors.
+          cache-dependency-path: config/requirements/*.txt
 
-      - run: pip install -r requirements-dev.txt
+      - run: pip install -r config/requirements/dev.txt
 
       - name: Migrate
-        run: alembic upgrade head
+        run: alembic -c config/alembic.ini upgrade head
 
       - name: Ingest the committed corpus
         run: python -m ingestion ingest
@@ -162,12 +168,15 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
+          # requirements/ lives under config/; setup-python's default glob is
+          # **/requirements.txt, which now matches nothing and errors.
+          cache-dependency-path: config/requirements/*.txt
 
       # The default linux torch wheel is the CUDA build (~2.5 GB) and this runner
-      # has no GPU, so pin the CPU index first and let requirements-models.txt
+      # has no GPU, so pin the CPU index first and let config/requirements/models.txt
       # resolve against the wheel already installed.
       - run: pip install torch --index-url https://download.pytorch.org/whl/cpu
-      - run: pip install -r requirements-dev.txt -r requirements-models.txt
+      - run: pip install -r config/requirements/dev.txt -r config/requirements/models.txt
 
       # Weights are immutable per model id, so the key never needs to change.
       # The cache holds the embedding model AND BAAI/bge-reranker-v2-m3, which the
@@ -179,7 +188,7 @@ jobs:
           key: hf-${{ runner.os }}-${{ env.MODEL_KEY }}-plus-reranker-v2-m3
 
       - name: Migrate
-        run: alembic upgrade head
+        run: alembic -c config/alembic.ini upgrade head
 
       - name: Ingest the committed corpus
         run: python -m ingestion ingest

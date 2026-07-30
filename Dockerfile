@@ -8,7 +8,7 @@
 
 FROM python:3.12-slim-bookworm AS builder
 WORKDIR /app
-COPY requirements.txt requirements-models.txt ./
+COPY config/requirements/ config/requirements/
 ## CPU wheels explicitly: the default linux torch wheel is the CUDA build and Cloud Run
 ## has no GPU. The "+cpu" local version is the load-bearing part — it exists only on the
 ## pytorch index, so the resolver cannot quietly swap in the CUDA wheel of the same
@@ -19,7 +19,7 @@ COPY requirements.txt requirements-models.txt ./
 RUN pip install --upgrade pip \
  && pip install --prefix=/install \
       --extra-index-url https://download.pytorch.org/whl/cpu \
-      "torch==2.13.0+cpu" -r requirements.txt -r requirements-models.txt
+      "torch==2.13.0+cpu" -r config/requirements/base.txt -r config/requirements/models.txt
 
 FROM python:3.12-slim-bookworm
 ENV PYTHONDONTWRITEBYTECODE=1
