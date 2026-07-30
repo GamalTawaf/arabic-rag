@@ -30,11 +30,13 @@ set -e
 ## ---------------------------------------------------------------------------
 alembic -c config/alembic.ini upgrade head
 
-## exec, not a plain call: uvicorn becomes PID 1 and receives Cloud Run's SIGTERM
-## directly. Without it, the shell holds PID 1, swallows the signal, and every
-## scale-down waits out the 10 s grace period before being killed.
-exec uvicorn app.main:app \
-  --host 0.0.0.0 \
-  --port 8000 \
-  --proxy-headers \
-  --forwarded-allow-ips '*'
+## Then run whatever was asked for — the Dockerfile's CMD by default, or an
+## override. `exec "$@"` rather than a hardcoded uvicorn line: with ENTRYPOINT and
+## no CMD, `docker run <image> /bin/sh` and a Cloud Run job created with --args
+## were appended as $1 and silently ignored, so a one-shot command served HTTP
+## until its task timeout instead.
+##
+## exec, so the command becomes PID 1 and receives Cloud Run's SIGTERM directly.
+## Without it the shell holds PID 1, swallows the signal, and every scale-down
+## waits out the 10 s grace period before being killed.
+exec "$@"

@@ -44,7 +44,7 @@ second.
 | Secret Manager × 5 | `secrets.tf` | `database-url`, `anthropic-api-key`, `google-api-key`, `hf-api-key`, `ingest-api-key` |
 | Managed Prometheus sidecar | `prometheus.tf` | scrapes the app's own `/metrics` from inside the instance, writes to Cloud Monitoring |
 | Two service accounts | `iam.tf` | runtime + Pub/Sub invoker. **Not** the default compute SA |
-| 7 project APIs | `apis.tf` | not disabled on destroy — see the comment there |
+| 9 project APIs | `apis.tf` | not disabled on destroy — see the comment there |
 
 Least privilege, concretely. The runtime service account holds exactly four
 roles, and two of them are bound to a single resource rather than the project:
@@ -179,6 +179,14 @@ Terraform writes that one. **The generated password is therefore in
 protects is deleted at destroy.
 
 ### 3. Migrate and load the corpus
+
+> **The commands in this section no longer work as written.** They assume a
+> database with a public address, and `sql.tf` sets `ipv4_enabled = false`, so
+> `cloud-sql-proxy` from a laptop has no route to it. The schema now applies from
+> the container's entrypoint and the corpus goes in over `POST /ingest` or
+> `scripts/load-corpus.sh` — see [The database has no public
+> address](#the-database-has-no-public-address). This is kept for the shape of the
+> work, and for anyone running the stack with a public IP of their own.
 
 `CREATE EXTENSION vector` is not a Terraform resource and not a Cloud SQL database
 flag — pgvector ships with Cloud SQL Postgres 17 and has to be created *inside*
@@ -518,11 +526,14 @@ file mount.
 
 ### Destroying a private-IP stack
 
-This is the cost the original public-IP shape was avoiding. The peering cannot be
-deleted while a producer connection exists, and the VPC cannot be deleted while
-the peering exists, so `terraform destroy` can stop partway. `deletion_policy =
-"ABANDON"` on the connection is what makes the common case work. If destroy still
-fails on the network:
+This is the cost the original public-IP shape was avoiding, and it needs a manual
+step **every time** — not occasionally. `deletion_policy = "ABANDON"` means
+Terraform drops the peering from state without deleting it, so the peering is still
+attached when Terraform tries to delete the VPC, and that delete fails. The
+alternative is worse: letting Terraform delete the connection fails while the SQL
+instance still exists, stopping destroy with the database intact and still billing.
+
+So the teardown is `terraform destroy`, then:
 
 ```bash
 gcloud sql instances delete arabic-rag-pg            # the producer, first

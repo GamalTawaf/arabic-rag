@@ -204,7 +204,8 @@ variable "run_subnet_cidr" {
   description = <<-EOT
     Range for the subnet Cloud Run egresses from (network.tf). Direct VPC egress
     takes one address per instance, so this bounds scaling: /24 leaves room, the
-    /28 minimum does not.
+    /26 minimum Direct VPC egress asks for does not. (/28 is the Serverless VPC
+    Access connector's floor — a different mechanism, not this one.)
   EOT
   type        = string
   default     = "10.8.0.0/24"
