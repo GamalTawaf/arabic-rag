@@ -39,7 +39,6 @@ second.
 | Cloud SQL Postgres 17 | `sql.tf` | `db-f1-micro`, zonal, no backups, **private IP only**, SSL required |
 | VPC + one subnet | `network.tf` | custom mode, one region; Cloud Run egresses from it |
 | Private Service Access | `network.tf` | reserved /16 + service networking peering for the database's address |
-| Cloud Run job | `migrate.tf` | migrate + ingest + backfill from inside the VPC — the only path to the database |
 | Artifact Registry (Docker) | `artifact_registry.tf` | keeps the 5 most recent versions |
 | Pub/Sub topic + push subscription + DLQ | `pubsub.tf` | pushes to `/ingest/pubsub` with an OIDC token |
 | Secret Manager × 5 | `secrets.tf` | `database-url`, `anthropic-api-key`, `google-api-key`, `hf-api-key`, `ingest-api-key` |
@@ -412,19 +411,31 @@ Two consequences, both real:
 
 **A laptop cannot reach the database, and there is no flag to change that.**
 `ipv4_enabled` is hardcoded `false` — no variable, because an escape hatch is a
-thing someone leaves open. Schema and corpus load run inside the VPC, as a Cloud
-Run job on the same image (`migrate.tf`):
+thing someone leaves open. Two consequences follow:
+
+*Schema* is applied by the container itself: `docker-entrypoint.sh` runs
+`alembic upgrade head` before uvicorn starts. **That is a shortcut, not a
+recommendation** — every instance runs it, two cold starts can race, and a failed
+migration takes the revision down. The file says so at length, and names the three
+better options (a job as an explicit deploy step, a CI migration stage, or a
+maintenance container). It is here because the alternative in a stack this size
+was a whole job resource to run one command.
+
+*Corpus* goes in over HTTP, which needs no path into the VPC at all:
 
 ```bash
-gcloud run jobs execute arabic-rag-migrate --region me-central1 --wait
+URL=$(terraform output -raw service_url)
+KEY=$(terraform output -raw ingest_api_key)
+curl -sS -X POST "$URL/ingest" -H "x-api-key: $KEY" \
+  -H 'content-type: application/json' \
+  -d @- <<'JSON'
+{"doc_id":"qatar-labour-law-14-2004","title":"...","text":"..."}
+JSON
 ```
 
-That runs `alembic upgrade head && python -m ingestion ingest && python -m
-ingestion backfill --model bge` with the service's own service account, socket and
-secrets. All three steps are idempotent — Alembic skips applied revisions, chunk
-ids are a pure function of the text and upsert, backfill only embeds rows with no
-vector — so re-running after a partial failure is safe. That property is what
-makes a job acceptable as the *only* way in.
+`POST /ingest` runs the same chunk -> normalize -> embed -> upsert pipeline the CLI
+does, and it is idempotent (chunk ids are a pure function of the text, upserted
+`ON CONFLICT DO UPDATE`), so replaying a document is safe.
 
 ### Destroying a private-IP stack
 

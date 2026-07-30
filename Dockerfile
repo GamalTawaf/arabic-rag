@@ -46,11 +46,11 @@ RUN useradd --create-home --uid 10001 appuser \
  && chown -R appuser:appuser /app
 USER appuser
 EXPOSE 8000
-## --proxy-headers: Cloud Run terminates TLS and puts the caller in
-## X-Forwarded-For. Without this uvicorn reports the front end's address, and
-## /ask's per-IP rate limit degrades into one shared bucket for every user.
-## --forwarded-allow-ips=*: the only peer that can reach this container is the
-## platform front end, so there is no untrusted hop to distrust. Behind any
-## other proxy, narrow it to that proxy's address.
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", \
-     "--proxy-headers", "--forwarded-allow-ips", "*"]
+## The entrypoint runs `alembic upgrade head` and then execs uvicorn with
+## --proxy-headers (Cloud Run terminates TLS and puts the caller in
+## X-Forwarded-For; without it /ask's per-IP rate limit degrades into one shared
+## bucket) and --forwarded-allow-ips=* (the only peer that can reach this
+## container is the platform front end). Read the comment in that file before
+## copying this pattern — migrating from the entrypoint is a demo shortcut with
+## known costs, not a recommendation.
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
