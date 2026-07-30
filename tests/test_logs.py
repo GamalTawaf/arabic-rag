@@ -36,7 +36,13 @@ def tracer():
 def record(msg: str = "hello", level: int = logging.INFO, **extra) -> logging.LogRecord:
     """A LogRecord as `log.info(msg, extra=extra)` would produce one."""
     rec = logging.LogRecord(
-        name="app.test", level=level, pathname=__file__, lineno=1, msg=msg, args=(), exc_info=None
+        name="app.test",
+        level=level,
+        pathname=__file__,
+        lineno=1,
+        msg=msg,
+        args=(),
+        exc_info=None,
     )
     for key, value in extra.items():
         setattr(rec, key, value)
@@ -216,7 +222,127 @@ def test_setup_logging_uses_a_plain_formatter_when_json_is_off():
         logs.setup_logging(json_output=False)
 
         # Assert: local runs stay readable; JSON is for a log backend
-        assert not any(isinstance(h.formatter, logs.JsonFormatter) for h in root.handlers)
+        assert not any(
+            isinstance(h.formatter, logs.JsonFormatter) for h in root.handlers
+        )
         assert root.handlers
     finally:
         root.handlers = before
+
+
+# --------------------------------------------------------------------------
+# Redaction
+#
+# A backstop, not a policy. The rule is still "do not log personal data"; these
+# patterns exist because the thing that leaks it is usually a traceback nobody
+# wrote by hand.
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text, leaked",
+    [
+        ("contact ja.tawaf@gmail.com about it", "ja.tawaf@gmail.com"),
+        ("ssn 123-45-6789 on file", "123-45-6789"),
+        ("sin 123 456 789 supplied", "123 456 789"),
+        ("card 4111 1111 1111 1111 declined", "4111 1111 1111 1111"),
+        ("Authorization: Bearer hf_abcdefghijklmnop", "hf_abcdefghijklmnop"),
+        ("phone +1 613-555-0142 unreachable", "613-555-0142"),
+    ],
+)
+def test_identifiers_are_redacted_from_the_message(text, leaked):
+    # Arrange / Act
+    payload = emit(record(text))
+
+    # Assert
+    assert leaked not in payload["message"]
+    assert "[redacted" in payload["message"]
+
+
+def test_database_password_is_redacted_but_the_host_survives():
+    # Arrange: the realistic leak — a driver error that quotes the DSN back
+    rec = record(
+        "connect failed: postgresql+asyncpg://rag_user:s3cr3t-pw@10.8.0.3:5432/rag_db"
+    )
+
+    # Act
+    message = emit(rec)["message"]
+
+    # Assert
+    assert "s3cr3t-pw" not in message
+    assert "10.8.0.3:5432/rag_db" in message  # still diagnosable
+    assert "rag_user" in message
+
+
+def test_redaction_applies_to_the_stack_trace():
+    # Arrange
+    try:
+        raise ValueError("bad login for ja.tawaf@gmail.com")
+    except ValueError:
+        import sys
+
+        rec = record("failed", level=logging.ERROR)
+        rec.exc_info = sys.exc_info()
+
+    # Act / Assert
+    assert "ja.tawaf@gmail.com" not in emit(rec)["stack_trace"]
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "password",
+        "api_key",
+        "authorization",
+        "email",
+        "ssn",
+        "sin",
+        "phone",
+        "question",
+    ],
+)
+def test_sensitive_field_names_are_dropped_whatever_they_hold(field):
+    # Arrange / Act
+    payload = emit(record(**{field: "anything at all"}))
+
+    # Assert: by name, so a value in a shape no regex knows is still not logged
+    assert payload[field] == "[redacted]"
+
+
+def test_nested_extra_values_are_redacted():
+    # Arrange / Act
+    payload = emit(record(user={"contact": "ja.tawaf@gmail.com"}, ids=["123-45-6789"]))
+
+    # Assert
+    assert "ja.tawaf@gmail.com" not in json.dumps(payload)
+    assert "123-45-6789" not in json.dumps(payload)
+
+
+def test_ordinary_diagnostics_are_left_alone():
+    # Arrange: the false-positive check — this is what the logs are FOR
+    rec = record(
+        "answered in 2500 ms",
+        doc_id="qatar-labour-law-14-2004",
+        chunks=8,
+        cost_usd=0.0004,
+    )
+
+    # Act
+    payload = emit(rec)
+
+    # Assert
+    assert payload["message"] == "answered in 2500 ms"
+    assert payload["doc_id"] == "qatar-labour-law-14-2004"
+    assert payload["chunks"] == 8
+    assert payload["cost_usd"] == 0.0004
+
+
+async def test_trace_ids_are_never_redacted(tracer):
+    # Arrange: a 16-hex-digit span id can be all digits, and a blunt scrub of the
+    # whole line would eat it — which silently breaks the log-to-trace join.
+    async with tracing.span("retrieve"):
+        payload = emit(record(), project="p")
+
+    # Assert
+    assert "redacted" not in payload["trace_id"]
+    assert payload["logging.googleapis.com/spanId"] == payload["span_id"]
