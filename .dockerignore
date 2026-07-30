@@ -6,6 +6,7 @@
 #   ingestion/            imported by app.ingest_worker on the /ingest path
 #   data/                 the corpus, for `python -m ingestion ingest`
 #   alembic/, alembic.ini `alembic upgrade head` before first boot
+#   scripts/              load-corpus.sh, run as a one-off Cloud Run job
 #   requirements*.txt     read by the builder stage
 
 # Virtualenvs — 1 GB of host-platform wheels that must never reach a linux image
