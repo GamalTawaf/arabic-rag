@@ -76,6 +76,7 @@ from app.generation.budget import (
     fit_context,
 )
 from app.generation.failover import AllProvidersFailed
+from app.lib.sources import source_url
 from app.models.chunks import Chunk
 from app.models.query_cache import CACHE_DIM
 from app.observability.cost import SpendTracker
@@ -136,7 +137,9 @@ def _is_refusal_text(text: str) -> bool:
     # refusal flag rather than a sentence.
     """
     stripped = text.strip()
-    return any(stripped.startswith(refusal.rstrip(".")) for refusal in REFUSALS.values())
+    return any(
+        stripped.startswith(refusal.rstrip(".")) for refusal in REFUSALS.values()
+    )
 
 
 @dataclass(frozen=True)
@@ -153,6 +156,10 @@ class Citation:
     article: str | None
     score: float
     excerpt: str
+    #: The law's page on the source portal, from the corpus manifest — what lets a
+    #: reader check the excerpt instead of trusting it. None for a document that
+    #: arrived over POST /ingest, which has no manifest entry (app/lib/sources.py).
+    source_url: str | None = None
 
 
 @dataclass(frozen=True)
@@ -215,6 +222,7 @@ def _citation(hit: Hit) -> Citation:
         article=hit.article,
         score=round(hit.score, 6),
         excerpt=_excerpt(hit.text),
+        source_url=source_url(hit.doc_id),
     )
 
 
@@ -226,6 +234,7 @@ def citation_payload(citations: Sequence[Citation]) -> list[dict]:
             "article": citation.article,
             "score": citation.score,
             "excerpt": citation.excerpt,
+            "source_url": citation.source_url,
         }
         for citation in citations
     ]
@@ -273,7 +282,10 @@ def _cited_scores(cited: Sequence[object]) -> list[tuple[str, float]]:
         elif isinstance(entry, dict) and isinstance(entry.get("chunk_id"), str):
             score = entry.get("score")
             pairs.append(
-                (entry["chunk_id"], float(score) if isinstance(score, int | float) else 0.0)
+                (
+                    entry["chunk_id"],
+                    float(score) if isinstance(score, int | float) else 0.0,
+                )
             )
         # Anything else is a row this version did not write and cannot read; skip
         # it rather than fail the cache hit over one malformed citation.
@@ -308,6 +320,7 @@ async def _hydrate_citations(
             article=by_id[chunk_id].article,
             score=score,
             excerpt=_excerpt(by_id[chunk_id].text),
+            source_url=source_url(by_id[chunk_id].doc_id),
         )
         for chunk_id, score in pairs
         if chunk_id in by_id
@@ -401,12 +414,15 @@ class RagService:
         started = time.perf_counter()
         prepared = await self._prepare(session, question, config)
 
-        yield EVENT_CITATIONS, {
-            "citations": citation_payload(prepared.citations),
-            "register": prepared.plan.register,
-            "cached": prepared.cached is not None,
-            "refused": prepared.refused,
-        }
+        yield (
+            EVENT_CITATIONS,
+            {
+                "citations": citation_payload(prepared.citations),
+                "register": prepared.plan.register,
+                "cached": prepared.cached is not None,
+                "refused": prepared.refused,
+            },
+        )
 
         if prepared.cached is not None or prepared.refused:
             text = (
@@ -481,7 +497,9 @@ class RagService:
             )
 
         stages: dict[str, float] = {}
-        async with _stage(stages, "plan", **{"app.retrieval.config": config}) as planned:
+        async with _stage(
+            stages, "plan", **{"app.retrieval.config": config}
+        ) as planned:
             plan = await self.planner.plan(question)
             planned.set_attribute("app.planning.strategy", plan.strategy)
             planned.set_attribute("app.planning.register", plan.register)
@@ -633,7 +651,9 @@ class RagService:
         if config == "lexical":
             return await lexical_search(session, query, limit=limit)
         if vector is None:  # pragma: no cover - _embed guarantees a vector here
-            raise ValueError(f"config {config!r} is dense but {query!r} was not embedded")
+            raise ValueError(
+                f"config {config!r} is dense but {query!r} was not embedded"
+            )
         if config == "dense":
             return await dense_search(session, vector, self.embedder.model_key, limit)
         return await hybrid_search(
@@ -691,7 +711,9 @@ class RagService:
         if not hits:
             return True
         top = hits[0]
-        return top.source == RERANK_SOURCE and top.score < self.settings.rerank_min_score
+        return (
+            top.source == RERANK_SOURCE and top.score < self.settings.rerank_min_score
+        )
 
     def _reserve_spend(self, system: str, user: str) -> float:
         """Cap check *before* the call, on an estimate. Raises SpendCapExceeded.

@@ -80,7 +80,7 @@ resource "google_sql_database_instance" "pg" {
       # flag, not for five minutes. There is deliberately no variable to turn a
       # public address back on, because an escape hatch is a thing someone leaves
       # open. Schema runs from the container's own entrypoint
-      # (docker-entrypoint.sh) and the corpus loads over POST /ingest or
+      # (config/docker-entrypoint.sh) and the corpus loads over POST /ingest or
       # scripts/load-corpus.sh — both from inside the VPC. There is no job resource.
       ipv4_enabled = false
 

@@ -3,7 +3,7 @@ set -e
 
 ## Load the corpus into a database no laptop can reach.
 ##
-## docker-entrypoint.sh applies the schema, but nothing puts the five documents in
+## config/docker-entrypoint.sh applies the schema, but nothing puts the five documents in
 ## data/corpus/ into it, and with ipv4_enabled = false (terraform/sql.tf) there is
 ## no route from here to run `python -m ingestion ingest` locally. The image that
 ## serves /ask already carries the corpus, the ingestion CLI and the baked bge-m3

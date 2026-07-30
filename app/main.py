@@ -49,8 +49,26 @@ async def metrics() -> Response:
 
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
+class RevalidatedStatic(StaticFiles):
+    """StaticFiles that makes the browser check before reusing a page.
+
+    StaticFiles sends ETag and Last-Modified but no Cache-Control, and a response
+    without Cache-Control is *heuristically* cacheable: Chrome will re-serve the
+    page from disk cache without asking, so an edit here can stay invisible in the
+    browser through several reloads. "no-cache" does not mean don't store — it means
+    revalidate, so the ETag still answers 304 and nothing is re-downloaded unless it
+    actually changed. Costs one conditional request per load; buys never shipping a
+    stale shell that reads as "my change did not deploy".
+    """
+
+    def file_response(self, *args: object, **kwargs: object) -> Response:
+        response = super().file_response(*args, **kwargs)  # type: ignore[arg-type]
+        response.headers.setdefault("Cache-Control", "no-cache")
+        return response
+
+
 # The demo page, last: a mount at "/" swallows every path not already claimed, so
 # it must come after the routers and /metrics or it would shadow them. One static
 # file, no build step, served from the app itself — which is also what keeps it
 # same-origin, so /ask needs no CORS middleware.
-app.mount("/", StaticFiles(directory=Path(__file__).parent / "static", html=True))
+app.mount("/", RevalidatedStatic(directory=Path(__file__).parent / "static", html=True))

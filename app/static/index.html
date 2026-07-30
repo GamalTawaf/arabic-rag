@@ -112,6 +112,20 @@
   }
   .gauge b { color: var(--ink); font-weight: 600; }
 
+  /* Navigation has to read as navigation. Matching the gauge's 12px grey made it
+     invisible — the eye took the whole masthead row for one strip of telemetry.
+     So: ink not slate, a standing underline, and sat next to the wordmark with the
+     gauge pushed to the far end, because adjacency to the title is what says "links". */
+  .nav {
+    display: flex; gap: 18px; flex: none;
+    font-size: 13.5px; font-family: var(--sans);
+  }
+  .nav a {
+    color: var(--ink); text-decoration: none;
+    border-bottom: 1px solid var(--edge); padding-bottom: 2px;
+  }
+  .nav a:hover { color: var(--rubric); border-bottom-color: var(--rubric); }
+
   .theme {
     flex: none; background: none; border: 1px solid var(--rule); border-radius: 3px;
     padding: 6px 8px; cursor: pointer; color: var(--slate);
@@ -302,6 +316,10 @@
     display: block; font-family: var(--mono); font-size: 9.5px; color: var(--slate);
     direction: ltr; text-align: left; padding-bottom: 12px;
   }
+  /* The provenance line is the one place in the rail that leaves the app, so it
+     reads as a link rather than as more metadata. */
+  .article .doc a { color: var(--slate); text-decoration: underline; text-underline-offset: 2px; }
+  .article .doc a:hover { color: var(--rubric); }
 
   /* المصادر — what is in the corpus */
   .sources { margin: 0; padding: 0; list-style: none; }
@@ -348,6 +366,9 @@
     }
     .panel { max-height: 60vh; }
     .masthead, .thread { padding-inline: 22px; }
+    /* The gauge is the first thing to go on a phone; the links are what the reader
+       came for, so they stay. */
+    .gauge { display: none; }
     .composer { padding-inline: 22px; order: 2; }
     .welcome { padding-top: 8vh; }
     .a { font-size: 17.5px; }
@@ -369,6 +390,15 @@
         قانون العمل القطري
         <span class="strapline">Ask in Arabic. Every answer cites its article.</span>
       </h1>
+      <!-- The two places a reader goes to check this thing rather than trust it:
+           the portal the corpus came from, and the service's own live metrics.
+           Before the gauge in source order, so it sits beside the wordmark while the
+           gauge's auto margin pushes the telemetry to the far end of the row. -->
+      <nav class="nav" aria-label="روابط">
+        <a href="https://www.almeezan.qa" target="_blank" rel="noreferrer noopener">الميزان ↗</a>
+        <a href="/dashboard.html">القياسات</a>
+        <a href="https://github.com/GamalTawaf/arabic-rag" target="_blank" rel="noreferrer noopener">الكود ↗</a>
+      </nav>
       <div class="gauge" id="gauge"></div>
       <button class="theme" id="theme" type="button" aria-label="بدّل إلى الوضع الداكن">
         <svg class="to-dark" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -445,9 +475,6 @@
       النصوص من <a href="https://www.almeezan.qa" rel="noreferrer noopener">الميزان</a> —
       البوابة القانونية القطرية، وزارة العدل. نسخ غير رسمية، والجواب يولّده نموذج
       لغوي وقد يخطئ. اقرأ المادة بنفسك.
-      <br>
-      <!-- The operator's view: same counters, in English, public on purpose. -->
-      <a href="/dashboard.html">لوحة القياسات ↗</a>
     </footer>
   </aside>
 
@@ -553,7 +580,7 @@ function paintSanad(turn) {
     return;
   }
   sanadLede.textContent = cites.length
-    ? "مرتبة بحسب صلتها بالسؤال. اضغط المادة لقراءة نصها."
+    ? "مرتبة بحسب صلتها بالسؤال. اضغط المادة لقراءة نصها، والرابط يفتح القانون على الميزان."
     : "لم تُسترجع أي مادة لهذا السؤال.";
 
   for (const c of cites) {
@@ -569,7 +596,20 @@ function paintSanad(turn) {
     row.querySelector(".num").textContent = `المادة ${c.article ?? "—"}`;
     row.querySelector(".score").textContent = (c.score ?? 0).toFixed(3);
     row.querySelector(".text").textContent = withoutDuplicateHeading(c.excerpt, c.article);
-    row.querySelector(".doc").textContent = c.doc_id;
+    const doc = row.querySelector(".doc");
+    if (c.source_url) {
+      // The law on Al Meezan, not the article: the manifest records LawView URLs
+      // and the portal's per-article ids are not derivable from an article number.
+      // Said plainly in the link text so nobody expects to land on المادة N.
+      const a = document.createElement("a");
+      a.href = c.source_url;
+      a.target = "_blank";
+      a.rel = "noreferrer noopener";
+      a.textContent = `${c.doc_id} — النص على الميزان ↗`;
+      doc.append(a);
+    } else {
+      doc.textContent = c.doc_id;
+    }
     li.append(row);
     articlesEl.append(li);
   }
