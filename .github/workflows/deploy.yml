@@ -107,7 +107,7 @@ jobs:
       # later `terraform apply` does not drag the service back to an older image.
       - name: Build and push
         run: |
-          docker build -f docker/Dockerfile \
+          docker build \
             -t "$IMAGE:${{ github.sha }}" \
             -t "$IMAGE:latest" .
           docker push "$IMAGE:${{ github.sha }}"

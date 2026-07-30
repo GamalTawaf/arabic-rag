@@ -98,7 +98,7 @@ resource "google_cloud_run_v2_service" "rag" {
       image = local.image
 
       ports {
-        container_port = 8000 # matches EXPOSE / uvicorn in docker/Dockerfile
+        container_port = 8000 # matches EXPOSE / uvicorn in the repo Dockerfile
       }
 
       resources {

@@ -55,9 +55,9 @@ Dataset: 283 labelled pairs — 229 MSA, 54 Gulf, 268 answerable, 15 unanswerabl
 
 ```bash
 docker compose up -d db                       # pgvector on 5433 (creates rag_db AND rag_test)
-uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python -r requirements-dev.txt
-uv pip install --python .venv/bin/python -r requirements-models.txt   # torch, for the local models
-alembic upgrade head && python -m ingestion ingest
+uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python -r config/requirements/dev.txt
+uv pip install --python .venv/bin/python -r config/requirements/models.txt   # torch, for the local models
+alembic -c config/alembic.ini upgrade head && python -m ingestion ingest
 python -m ingestion backfill --model bge      # and --model e5
 ```
 Dev database is `rag_db`; tests use `rag_test` and never touch dev data.

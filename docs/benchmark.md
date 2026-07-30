@@ -29,7 +29,7 @@ scored separately, on the score each config assigns to its best wrong answer.
 
 ```bash
 docker compose up -d db
-alembic upgrade head
+alembic -c config/alembic.ini upgrade head
 python -m ingestion ingest                  # 5 documents -> 233 chunks
 python -m ingestion backfill --model e5     # ~10s on MPS
 python -m ingestion backfill --model bge    # ~10s on MPS

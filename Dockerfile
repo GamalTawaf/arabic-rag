@@ -8,7 +8,7 @@
 
 FROM python:3.12-slim-bookworm AS builder
 WORKDIR /app
-COPY requirements.txt requirements-models.txt ./
+COPY config/requirements/ config/requirements/
 ## CPU wheels explicitly: the default linux torch wheel is the CUDA build and Cloud Run
 ## has no GPU. The "+cpu" local version is the load-bearing part — it exists only on the
 ## pytorch index, so the resolver cannot quietly swap in the CUDA wheel of the same
@@ -19,7 +19,7 @@ COPY requirements.txt requirements-models.txt ./
 RUN pip install --upgrade pip \
  && pip install --prefix=/install \
       --extra-index-url https://download.pytorch.org/whl/cpu \
-      "torch==2.13.0+cpu" -r requirements.txt -r requirements-models.txt
+      "torch==2.13.0+cpu" -r config/requirements/base.txt -r config/requirements/models.txt
 
 FROM python:3.12-slim-bookworm
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -46,10 +46,6 @@ RUN useradd --create-home --uid 10001 appuser \
  && chown -R appuser:appuser /app
 USER appuser
 EXPOSE 8000
-## Built from the repository root, not from this directory:
-##   docker build -f docker/Dockerfile .
-## The COPY paths below are context-relative, so they do not change with this file.
-##
 ## The entrypoint runs `alembic upgrade head` and then execs uvicorn with
 ## --proxy-headers (Cloud Run terminates TLS and puts the caller in
 ## X-Forwarded-For; without it /ask's per-IP rate limit degrades into one shared
@@ -57,4 +53,4 @@ EXPOSE 8000
 ## container is the platform front end). Read the comment in that file before
 ## copying this pattern — migrating from the entrypoint is a demo shortcut with
 ## known costs, not a recommendation.
-ENTRYPOINT ["/app/docker/entrypoint.sh"]
+ENTRYPOINT ["/app/docker-entrypoint.sh"]

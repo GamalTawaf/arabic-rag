@@ -320,7 +320,7 @@ def main(argv: list[str] | None = None) -> int:
         print(
             f"database error: {type(exc).__name__}: {str(exc).splitlines()[0]}\n"
             "  is Postgres up (docker compose up -d db) and migrated "
-            "(alembic upgrade head) with the corpus ingested (python -m ingestion ingest)?",
+            "(alembic -c config/alembic.ini upgrade head) with the corpus ingested (python -m ingestion ingest)?",
             file=sys.stderr,
         )
         return 1

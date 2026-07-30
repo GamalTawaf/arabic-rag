@@ -28,7 +28,7 @@ set -e
 ## container run by hand. All three keep the schema change visible and one
 ## instance at a time.
 ## ---------------------------------------------------------------------------
-alembic upgrade head
+alembic -c config/alembic.ini upgrade head
 
 ## exec, not a plain call: uvicorn becomes PID 1 and receives Cloud Run's SIGTERM
 ## directly. Without it, the shell holds PID 1, swallows the signal, and every

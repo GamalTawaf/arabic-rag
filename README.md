@@ -153,14 +153,14 @@ requirements file — everything except embedding and reranking runs without the
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
-pip install -r requirements-dev.txt          # service + tests, no torch
-pip install -r requirements-models.txt       # sentence-transformers + torch (~2 GB)
+pip install -r config/requirements/dev.txt          # service + tests, no torch
+pip install -r config/requirements/models.txt       # sentence-transformers + torch (~2 GB)
 
 cp .env.example .env
 docker compose up -d db                      # pgvector/pgvector:pg17 on :5433
 export DATABASE_URL=postgresql+asyncpg://rag_user:rag_pass@localhost:5433/rag_db
 
-alembic upgrade head
+alembic -c config/alembic.ini upgrade head
 python -m ingestion ingest                   # committed corpus -> 233 chunks
 python -m ingestion stats                    # rows per document, embedding coverage
 
@@ -533,7 +533,7 @@ Accurate as of the current commit.
   `sentence-transformers` and imports cleanly (verified: 2.06 GB, `import app.main`
   succeeds), but bge-m3 and the cross-encoder — about 4.4 GB — download on first use
   rather than at build time. On Cloud Run that lands as a slow first request after
-  each scale-to-zero cold start. The trade is noted in `docker/Dockerfile`.
+  each scale-to-zero cold start. The trade is noted in the `Dockerfile`.
 - **The `LLMPlanner` ablation and the API-embedding rows** — OpenAI and Cohere
   embedding columns are wired and unit-tested against mocks, and both are 0% in
   `/stats` coverage because there is no key to backfill them with. Benchmark rows

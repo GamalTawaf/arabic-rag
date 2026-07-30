@@ -96,14 +96,14 @@ e5، ويحسّن MRR للنموذجين. لكنه **لا** يحسّن recall@3 
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
-pip install -r requirements-dev.txt          # الخدمة والاختبارات، بلا torch
-pip install -r requirements-models.txt       # sentence-transformers + torch (~2 غ.ب)
+pip install -r config/requirements/dev.txt          # الخدمة والاختبارات، بلا torch
+pip install -r config/requirements/models.txt       # sentence-transformers + torch (~2 غ.ب)
 
 cp .env.example .env
 docker compose up -d db                      # pgvector/pgvector:pg17 على المنفذ 5433
 export DATABASE_URL=postgresql+asyncpg://rag_user:rag_pass@localhost:5433/rag_db
 
-alembic upgrade head
+alembic -c config/alembic.ini upgrade head
 python -m ingestion ingest                   # النصوص المرفقة -> 233 مقطعاً
 python -m ingestion backfill --model bge     # النموذج الذي تستعلم به الخدمة
 

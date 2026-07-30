@@ -116,8 +116,8 @@ are yours:
 
 ### 1. Build and push the image
 
-`docker/Dockerfile` installs CPU torch and `sentence-transformers` alongside
-`requirements.txt`, because the service embeds queries with `BAAI/bge-m3` and
+The `Dockerfile` installs CPU torch and `sentence-transformers` alongside
+`config/requirements/base.txt`, because the service embeds queries with `BAAI/bge-m3` and
 reranks with `BAAI/bge-reranker-v2-m3` (`app/deps.py`, `SERVICE_MODEL_KEY = "bge"`).
 Setting `rerank_enabled = false` would not remove the need — the *embedder* uses
 torch too. Verified locally: the image builds at 2.06 GB and `import app.main`
@@ -125,7 +125,7 @@ succeeds inside it.
 
 What the image does **not** carry is the ~4.4 GB of model weights; they download
 on first use, so expect a slow first request after each scale-to-zero cold start.
-The `docker/Dockerfile` comment names the build step that trades image size for cold-start
+The `Dockerfile` comment names the build step that trades image size for cold-start
 latency if that matters more.
 
 Then:
@@ -136,7 +136,7 @@ REGION=me-central1
 IMAGE="$REGION-docker.pkg.dev/$PROJECT/arabic-rag/arabic-rag:latest"
 
 gcloud auth configure-docker "$REGION-docker.pkg.dev"
-docker build -f docker/Dockerfile --platform linux/amd64 -t "$IMAGE" .   # linux/amd64 matters on Apple Silicon
+docker build --platform linux/amd64 -t "$IMAGE" .   # linux/amd64 matters on Apple Silicon
 docker push "$IMAGE"
 ```
 
@@ -194,7 +194,7 @@ export DATABASE_URL="postgresql+asyncpg://rag_user:PASSWORD@localhost:5432/rag_d
 #   PASSWORD: gcloud secrets versions access latest --secret arabic-rag-database-url
 #   (that secret holds the full unix-socket URL; take the password out of it)
 
-alembic upgrade head                     # creates the vector extension + schema
+alembic -c config/alembic.ini upgrade head  # creates the vector extension + schema
 python -m ingestion ingest               # 233 chunks from the committed corpus
 python -m ingestion backfill --model bge # the column the service queries
 python -m ingestion stats                # confirm coverage 1.0
@@ -415,7 +415,7 @@ Two consequences, both real:
 `ipv4_enabled` is hardcoded `false` — no variable, because an escape hatch is a
 thing someone leaves open. Two consequences follow:
 
-*Schema* is applied by the container itself: `docker/entrypoint.sh` runs
+*Schema* is applied by the container itself: `docker-entrypoint.sh` runs
 `alembic upgrade head` before uvicorn starts. **That is a shortcut, not a
 recommendation** — every instance runs it, two cold starts can race, and a failed
 migration takes the revision down. The file says so at length, and names the three

@@ -36,7 +36,7 @@ from ingestion.pipeline import ingest_documents
 T = TypeVar("T")
 
 _MISSING_TABLE_HINT = (
-    'run "alembic upgrade head" against the same DATABASE_URL to create the chunks table'
+    'run "alembic -c config/alembic.ini upgrade head" against the same DATABASE_URL to create the chunks table'
 )
 _NOT_RUNNING_HINT = "is Postgres running? (docker compose up -d db)"
 
