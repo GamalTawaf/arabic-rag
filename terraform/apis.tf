@@ -14,6 +14,8 @@ locals {
     "pubsub.googleapis.com",
     "cloudtrace.googleapis.com", # the "Cloud Trace enabled" requirement, literally
     "iam.googleapis.com",
+    "compute.googleapis.com",           # the VPC and the subnet Cloud Run egresses into
+    "servicenetworking.googleapis.com", # the Private Service Access peering
   ]
 }
 
