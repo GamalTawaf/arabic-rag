@@ -5,6 +5,18 @@ Arabic-first: the corpus is Modern Standard Arabic, the questions arrive in MSA
 *or* Gulf dialect, and the point of the project is to measure what that
 difference costs.
 
+![The /ask UI answering a Gulf-dialect question and an MSA one, each with the article it cites](docs/img/ui.png)
+
+The service ships a single-file Arabic UI at `/` — ask in either register, and the
+panel on the left is the *sanad*: the articles retrieved for that answer with
+their rerank scores, click to read the text. Above, question 1 is Gulf dialect
+(`gulf`, article 109 — the employer pays for treatment), question 2 is MSA
+(`msa`, article 78 — annual leave). Real screenshot from this checkout, and
+therefore honest about its one gap: **retrieval, reranking, register detection,
+citations, timings and cost are the running pipeline; the answer prose is quoted
+out of the top article by a local extractive stub**, because there is no LLM key
+here (see below). With a key, the same frames stream from Claude or Gemini.
+
 All four phases are built — corpus and ingestion, eval dataset and benchmark,
 the `/ask` service with planning/generation/tracing/caching/spend-cap, and a
 Terraform stack for Cloud Run + Cloud SQL + Pub/Sub. 576 tests, a CI regression
@@ -155,6 +167,9 @@ python -m ingestion backfill --model bge     # the model the service queries wit
 
 uvicorn app.main:app --port 8000
 ```
+
+`http://localhost:8000/` is the UI in the screenshot above — `app/static/index.html`,
+one file, no build step, mounted last in `app/main.py` so it cannot shadow a route.
 
 `docker compose up -d db` creates **two** databases: `rag_db` for development and
 `rag_test` for the suite, via `docker/init-rag-test-db.sql`. That file only runs

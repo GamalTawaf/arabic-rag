@@ -9,3 +9,4 @@ data/corpus/*.raw
 benchmark/results/*.local.json
 *.egg-info/
 .coverage
+.playwright-mcp/
