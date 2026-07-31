@@ -21,7 +21,7 @@ here (see below). With a key, the same frames stream from Claude or Gemini.
 
 All four phases are built — corpus and ingestion, eval dataset and benchmark,
 the `/ask` service with planning/generation/tracing/caching/spend-cap, and a
-Terraform stack for Cloud Run + Cloud SQL + Pub/Sub. 663 tests, a CI regression
+Terraform stack for Cloud Run + Cloud SQL + Pub/Sub. 717 tests, a CI regression
 gate on every PR, an on-demand dense gate and latency replay.
 
 **Two things have never run, and every claim below is written around that.**
@@ -157,6 +157,11 @@ pip install -r config/requirements/dev.txt          # service + tests, no torch
 pip install -r config/requirements/models.txt       # sentence-transformers + torch (~2 GB)
 
 cp .env.example .env
+# Now open .env and fill in ONE LLM key — every value in it ships empty:
+#   ANTHROPIC_API_KEY=…   or   GOOGLE_API_KEY=…       (the default chain)
+#   HF_API_KEY=…          plus PROVIDERS=huggingface  (see the note below)
+# Everything up to `uvicorn` works without a key; only the answer itself needs one.
+
 docker compose up -d db                      # pgvector/pgvector:pg17 on :5433
 export DATABASE_URL=postgresql+asyncpg://rag_user:rag_pass@localhost:5433/rag_db
 
@@ -214,8 +219,16 @@ HTTP/1.1 503 Service Unavailable
  set ANTHROPIC_API_KEY in the environment or .env (see available_providers())"}
 ```
 
-**Set `ANTHROPIC_API_KEY` (or `GOOGLE_API_KEY` for the Gemini adapter) and the
-same request streams.** The frames below are the real output shape, captured from
+**Set `ANTHROPIC_API_KEY` (or `GOOGLE_API_KEY` for the Gemini adapter) in `.env`
+and the same request streams.** Those two are the default chain
+(`providers = "anthropic,gemini"` in `app/config.py`), so either one alone is
+enough and the other is the failover. Hugging Face is the third option and the
+one that needs a second variable: `HF_API_KEY` on its own changes nothing,
+because `huggingface` is not in the default chain — set `PROVIDERS=huggingface`
+alongside it, and set `HF_PRICE_*_USD_PER_MILLION` to your account's real rate,
+since that model's price is not a table in the code and the spend cap reads it.
+
+The frames below are the real output shape, captured from
 this pipeline with a stub provider standing in for the LLM — retrieval,
 citations, register detection and framing are genuine; the three `token` frames
 are the stub saying so, because no key exists here to produce real ones.
@@ -294,7 +307,7 @@ python -m benchmark.replay --n 30            # the latency-budget gate
 Tests and lint:
 
 ```bash
-pytest            # 575 pass, 1 skipped (it loads the 2 GB reranker; set
+pytest            # 716 pass, 1 skipped (it loads the 2 GB reranker; set
                   # RERANK_REAL_MODEL=1 to run it). Needs the rag_test database
                   # above — without it 170 more tests skip and pytest still
                   # exits 0.

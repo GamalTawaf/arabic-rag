@@ -24,10 +24,13 @@ page ships no table of contents.
 
 from __future__ import annotations
 
+import logging
 from functools import lru_cache
 from pathlib import Path
 
 from ingestion.fetch import DEFAULT_CORPUS_DIR, load_manifest
+
+logger = logging.getLogger(__name__)
 
 # Module-level so a test can point it somewhere else. Not a setting: the corpus
 # directory is part of the image, not part of the deployment.
@@ -43,14 +46,25 @@ def _manifest_urls() -> dict[str, str]:
     is unavailable.
     """
     try:
-        documents = load_manifest(CORPUS_DIR)
-    except (FileNotFoundError, ValueError):
+        return {
+            str(document["doc_id"]): str(document["source_url"])
+            for document in load_manifest(CORPUS_DIR)
+            if document.get("doc_id") and document.get("source_url")
+        }
+    except Exception:  # "never raises" has to mean every shape, not two of them
+        # Not (FileNotFoundError, ValueError), and the read is inside the guard
+        # rather than beside it: a `documents` entry that is a string or a list
+        # makes `.get` raise AttributeError, and a CORPUS_DIR pointing at a file
+        # raises NotADirectoryError. Both escaped into _citation() and 500'd
+        # every citation-bearing /ask — from one malformed entry in a manifest
+        # that scripts/scrape_sections.py rewrites by hand with nothing
+        # validating it.
+        logger.warning(
+            "could not read source URLs from the corpus manifest; "
+            "citations will have no links",
+            exc_info=True,
+        )
         return {}
-    return {
-        str(document["doc_id"]): str(document["source_url"])
-        for document in documents
-        if document.get("doc_id") and document.get("source_url")
-    }
 
 
 @lru_cache(maxsize=1)
@@ -64,25 +78,33 @@ def _manifest_sections() -> dict[str, tuple[tuple[int, int, str], ...]]:
     Never raises, for the same reason as :func:`_manifest_urls` — a missing
     anchor costs a less precise link, not a failed request.
     """
+    sections: dict[str, tuple[tuple[int, int, str], ...]] = {}
     try:
         documents = load_manifest(CORPUS_DIR)
-    except (FileNotFoundError, ValueError):
+        for document in documents:
+            doc_id = str(document.get("doc_id") or "")
+            if not doc_id:
+                continue
+            try:
+                ranges = tuple(
+                    (int(s["first_article"]), int(s["last_article"]), str(s["anchor"]))
+                    for s in document.get("sections") or ()
+                    if not s.get("preamble")
+                )
+            except (KeyError, TypeError, AttributeError, ValueError):
+                # AttributeError included: a `sections` value that is a mapping
+                # iterates as its string keys, and `s.get` on a str raises out
+                # through this inner catch and out of the function.
+                continue  # a malformed entry costs that law its anchors, nothing else
+            if ranges:
+                sections[doc_id] = ranges
+    except Exception:  # same contract as _manifest_urls
+        logger.warning(
+            "could not read chapter anchors from the corpus manifest; "
+            "citations will link to the law rather than the chapter",
+            exc_info=True,
+        )
         return {}
-    sections: dict[str, tuple[tuple[int, int, str], ...]] = {}
-    for document in documents:
-        doc_id = str(document.get("doc_id") or "")
-        if not doc_id:
-            continue
-        try:
-            ranges = tuple(
-                (int(s["first_article"]), int(s["last_article"]), str(s["anchor"]))
-                for s in document.get("sections") or ()
-                if not s.get("preamble")
-            )
-        except (KeyError, TypeError, ValueError):
-            continue  # a malformed entry costs that law its anchors, nothing else
-        if ranges:
-            sections[doc_id] = ranges
     return sections
 
 

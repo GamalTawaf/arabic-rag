@@ -10,20 +10,15 @@
 resource "google_service_account" "runtime" {
   account_id   = "${var.service_name}-run"
   display_name = "arabic-rag Cloud Run runtime"
-  description  = "Runs the arabic-rag container. Four roles, each scoped to one resource where the API allows it."
+  description  = "Runs the arabic-rag container. Three roles, each scoped to one resource where the API allows it."
 
   depends_on = [google_project_service.apis]
 }
 
-# roles/cloudsql.client — connect through the Cloud SQL Auth Proxy that Cloud Run
-# mounts as a unix socket (see run.tf). Project-scoped because Cloud SQL does not
-# expose instance-level IAM for the client role; the instance itself is the only
-# one in the stack.
-resource "google_project_iam_member" "runtime_cloudsql_client" {
-  project = var.project_id
-  role    = "roles/cloudsql.client"
-  member  = "serviceAccount:${google_service_account.runtime.email}"
-}
+# No roles/cloudsql.client. That role authorises the Cloud SQL Auth Proxy, and
+# this service does not use it: the container connects straight to the instance's
+# private IP over Direct VPC egress (run.tf) with the password in DATABASE_URL.
+# The binding was granting a capability nothing exercises.
 
 # roles/cloudtrace.agent — write spans. Project-scoped because Cloud Trace has no
 # finer resource to bind to.

@@ -12,6 +12,7 @@ the ids have to come from the SDK's context, not from something we pass in.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
 
@@ -498,3 +499,115 @@ def test_a_value_whose_repr_raises_does_not_lose_the_line():
     # Assert
     assert payload["message"] == "still logged"
     assert "unrepresentable" in payload["thing"]
+
+
+# --------------------------------------------------------------------------
+# Regressions from the code review
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["accessToken", "clientSecret", "sessionToken", "refreshToken", "userEmail"],
+)
+def test_camel_case_credential_field_names_are_denied(field):
+    """The camelCase half of _DENY_KEYS, which used to be unreachable.
+
+    `_key_parts` alternated `[A-Za-z0-9]+` first, which consumed the whole token
+    and left the camelCase branch dead — so `accessToken` never met `token` while
+    `access_token` did. `apiKey` hid the gap by also matching the literal deny
+    entry `apikey`.
+    """
+    # Arrange / Act
+    payload = emit(record("hello", **{field: "hf_abcdefghijklmnopqrstuv"}))
+
+    # Assert
+    assert payload[field] == "[redacted]"
+
+
+def test_acronym_field_names_still_split_into_words():
+    # Arrange / Act: the camelCase branch must not break `HTTPHeader` into letters
+    parts = logs._key_parts("HTTPHeader")
+
+    # Assert
+    assert {"http", "header"} <= parts
+
+
+def test_the_plain_formatter_redacts_too():
+    """LOG_JSON=false is the default; redaction used to live only in the JSON one."""
+    # Arrange
+    leaky = "connect failed for postgresql://rag_user:hunter2secret@10.8.0.3:5432/rag_db"
+
+    # Act
+    line = logs.PlainFormatter().format(record(leaky))
+
+    # Assert
+    assert "hunter2secret" not in line
+    assert "10.8.0.3" in line  # the host is the diagnosis, and survives
+
+
+def test_a_slots_dataclass_in_extra_does_not_lose_the_line():
+    """@dataclass(slots=True) has no __dict__; _object_fields used to read it."""
+    # Arrange
+    @dataclasses.dataclass(slots=True)
+    class Request:
+        question: str
+        top_k: int
+
+    # Act
+    payload = emit(record("retrieved", req=Request(question="سؤال شخصي", top_k=5)))
+
+    # Assert
+    assert payload["req"] == {"question": "[redacted]", "top_k": 5}
+
+
+def test_a_passwordless_dsn_keeps_its_user_and_host():
+    """Cloud SQL IAM auth and local trust both produce `user@host` with no password.
+
+    The email rule matched it and destroyed both halves — exactly the context the
+    password rule goes out of its way to preserve.
+    """
+    # Arrange / Act
+    scrubbed = logs.redact("could not connect: postgresql://rag_user@10.8.0.3:5432/rag_db")
+
+    # Assert
+    assert "rag_user" in scrubbed and "10.8.0.3" in scrubbed
+
+
+def test_a_real_email_is_still_redacted_outside_a_url():
+    # Arrange / Act
+    scrubbed = logs.redact("bounced for worker@example.com")
+
+    # Assert
+    assert "worker@example.com" not in scrubbed
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["arabic-rag-database-url", "arabic-rag-hf-api-key", "arabic-rag-gmp-config"],
+)
+def test_a_secret_resource_name_is_not_mistaken_for_the_secret(name):
+    """Redacting the name leaves an error that no longer says which secret failed."""
+    # Arrange / Act
+    scrubbed = logs.redact(f"secret {name} access denied")
+
+    # Assert
+    assert name in scrubbed
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "hf_abcdefghijklmnop",
+        "ghp_abcdefghijklmnopqrst",
+        "sk-ant-api03-REALVALUE",
+        "my-secret-value",  # too few segments to read as a resource name
+    ],
+)
+def test_lowercase_vendor_keys_are_not_exempted_as_resource_names(value):
+    """The resource-name exemption must not swallow a real key."""
+    # Arrange / Act
+    scrubbed = logs.redact(f"token {value}")
+
+    # Assert
+    assert value not in scrubbed

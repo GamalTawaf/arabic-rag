@@ -1,10 +1,10 @@
-# Secret Manager. The Cloud Run service reads all three through
+# Secret Manager. The Cloud Run service reads all five through
 # `value_source.secret_key_ref` (run.tf), never as plaintext env values, so the
 # key text never appears in the service YAML, in `gcloud run services describe`,
 # or in a Cloud Console screenshot taken during a demo.
 #
 # Cost: ~$0.06 per active secret version per month, plus $0.03 per 10k accesses.
-# Three secrets is under $0.01/hour. Not the reason to destroy this stack.
+# Five secrets is under $0.01/hour. Not the reason to destroy this stack.
 
 locals {
   # secret id -> the env var the container reads it as. Names match app/config.py
@@ -34,9 +34,23 @@ resource "google_secret_manager_secret" "app" {
   depends_on = [google_project_service.apis]
 }
 
-# The database URL, in the unix-socket form asyncpg wants against the Cloud SQL
-# Auth Proxy socket Cloud Run mounts at /cloudsql. Terraform generates the
-# password, so Terraform is the only thing that can write this version.
+# The database URL: plain TCP to the instance's private address, over the Direct
+# VPC egress the service already has (run.tf). Terraform generates the password,
+# so Terraform is the only thing that can write this version.
+#
+# NOT the `?host=/cloudsql/<connection_name>` unix-socket form. That socket is
+# Cloud Run's built-in Cloud SQL connector, whose proxy runs in Google's
+# serverless infrastructure and reaches the instance over its *public* address —
+# and sql.tf sets `ipv4_enabled = false` with
+# `enable_private_path_for_google_cloud_services = false`, so there is no public
+# address and no Google-managed private path either. The two settings contradict
+# each other: the first apply would have deployed a revision whose entrypoint
+# hangs on `alembic upgrade head` against a socket that never connects, the port
+# never opens, and the 125 s startup probe fails every revision.
+#
+# Private IP + the VPC peering is the path this stack actually pays for. ssl_mode
+# on the instance is ENCRYPTED_ONLY, which asyncpg satisfies by negotiating TLS
+# on connect.
 #
 # This puts the password in terraform.tfstate in cleartext. That is how
 # Terraform works, not a bug being papered over: state is gitignored (see
@@ -45,7 +59,7 @@ resource "google_secret_manager_secret" "app" {
 # `password_wo` by hand, and add the version with gcloud.
 resource "google_secret_manager_secret_version" "database_url" {
   secret      = google_secret_manager_secret.app["database-url"].id
-  secret_data = "postgresql+asyncpg://${google_sql_user.app.name}:${random_password.db.result}@/${google_sql_database.rag.name}?host=/cloudsql/${google_sql_database_instance.pg.connection_name}"
+  secret_data = "postgresql+asyncpg://${google_sql_user.app.name}:${random_password.db.result}@${google_sql_database_instance.pg.private_ip_address}:5432/${google_sql_database.rag.name}"
 }
 
 # Cloud Run refuses to deploy a revision that references a secret with no

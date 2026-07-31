@@ -30,7 +30,7 @@ import logging
 import re
 import sys
 import time
-from dataclasses import is_dataclass
+from dataclasses import fields, is_dataclass
 from math import isfinite
 from typing import Any
 
@@ -104,7 +104,12 @@ _REDACTIONS: tuple[tuple[re.Pattern[str], str], ...] = (
         re.compile(r"\b([a-zA-Z][\w+.\-]*://[^:/?#\s]+):[^@\s]+@"),
         r"\1:[redacted:password]@",
     ),
-    (re.compile(r"\b[\w.+\-]+@[\w\-]+\.[\w.\-]{2,}\b"), "[redacted:email]"),
+    # `(?<!//)` keeps this off a passwordless DSN's userinfo. `rag_user@10.8.0.3`
+    # is the shape of an email address and is not one, and redacting it destroyed
+    # both the user and the host — the very context the password rule above goes
+    # out of its way to preserve. Cloud SQL IAM auth and local trust both produce
+    # exactly that URL.
+    (re.compile(r"(?<!//)\b[\w.+\-]+@[\w\-]+\.[\w.\-]{2,}\b"), "[redacted:email]"),
     # Labelled secrets (`token=…`, `Authorization: Bearer …`) are handled by
     # _redact_labelled below, which checks the value's shape first.
     (re.compile(r"\b\d{3}-\d{2}-\d{4}\b"), "[redacted:id]"),  # SSN
@@ -137,10 +142,32 @@ _LABELLED = re.compile(
 _CREDENTIAL_MIN = 12
 _WORDLIKE = re.compile(r"(?i)^[a-z]+$")
 
+# A GCP resource name, not a key: four or more short lowercase words joined by
+# hyphens. Without this, "secret arabic-rag-database-url access denied" redacted
+# the secret's *name* and left an error that no longer says which of the five
+# secrets is missing — the same "the redacted word was the diagnosis" failure
+# _WORDLIKE exists to prevent, moved from values to names. Everything terraform/
+# creates is named this way (arabic-rag-database-url, arabic-rag-hf-api-key).
+#
+# Deliberately narrow, because the cost of getting this wrong is a leaked
+# credential rather than a lost diagnostic:
+#   - hyphens only, so `hf_abcdefghijklmnop` and `ghp_…` are not exempt;
+#   - >= 4 segments, so `my-secret-value` and any other short hand-written
+#     password stays redacted; every secret this stack creates has four or more
+#     (arabic-rag-database-url, arabic-rag-hf-api-key);
+#   - segments of 2-12 letters, so the long random run in a real key never fits.
+# Every vendor key also carries a digit or a capital (sk-ant-api03-…, a JWT),
+# which fails the [a-z]-only class on its own.
+#
+# trade-off: a four-word lowercase passphrase ("correct-horse-battery-staple")
+# would pass through. Nothing here produces one — random_password in terraform/
+# is alphanumeric — and a passphrase is not a shape this service handles.
+_NAMELIKE = re.compile(r"^[a-z]{2,12}(?:-[a-z]{2,12}){3,}$")
+
 
 def _looks_like_credential(value: str) -> bool:
-    if _WORDLIKE.match(value):
-        return False  # "header", "missing", "required"
+    if _WORDLIKE.match(value) or _NAMELIKE.match(value):
+        return False  # "header", "missing", "required", "arabic-rag-database-url"
     return len(value) >= _CREDENTIAL_MIN or bool(
         re.search(r"[_\-.]", value) and len(value) >= 8
     )
@@ -231,7 +258,19 @@ def _key_parts(key: str) -> set[str]:
     `access_token`, `client_secret` and `x-api-key`, whose values have no shape any
     regex knows — so they were logged in full.
     """
-    words = [w.lower() for w in re.findall(r"[A-Za-z0-9]+|[A-Z][a-z0-9]*", key) if w]
+    # The camelCase branch must come *before* the run-of-letters branch. Written
+    # the other way round (`[A-Za-z0-9]+|[A-Z][a-z0-9]*`) the first alternative
+    # swallowed the whole token and the second was unreachable, so `accessToken`
+    # stayed one word and never met `token` in _DENY_KEYS — every camelCase
+    # spelling of a credential was logged in full while its snake_case twin was
+    # redacted. `apiKey` passed the suite only because the collapsed whole-key
+    # form, `apikey`, is a literal deny entry.
+    # `[A-Z]+(?![a-z])` keeps acronyms whole: HTTPHeader -> {http, header}.
+    words = [
+        w.lower()
+        for w in re.findall(r"[A-Z]+(?![a-z])|[A-Z][a-z0-9]*|[a-z0-9]+", key)
+        if w
+    ]
     words = [w for part in words for w in re.findall(r"[a-z]+|[0-9]+", part.lower())]
     pairs = {words[i] + words[i + 1] for i in range(len(words) - 1)}
     return {re.sub(r"[^a-z0-9]", "", key.lower()), *words, *pairs}
@@ -290,10 +329,35 @@ def _object_fields(value: Any) -> dict | None:
         except Exception:  # noqa: BLE001,S110 - a model that will not dump falls through
             pass  # to __dict__ / repr below; raising here would drop the line
     if is_dataclass(value) and not isinstance(value, type):
-        return dict(value.__dict__)
+        # getattr per field, not `value.__dict__`: @dataclass(slots=True) has no
+        # __dict__ at all, and the AttributeError propagated out of format() —
+        # logging.Handler.emit then printed "--- Logging error ---" with a raw
+        # traceback into the JSON stream and dropped the record, which is the
+        # one thing this module promises never to do.
+        return {f.name: getattr(value, f.name, None) for f in fields(value)}
     if hasattr(value, "__dict__") and not isinstance(value, type) and vars(value):
         return dict(vars(value))
     return None
+
+
+class PlainFormatter(logging.Formatter):
+    """The readable one-line format, scrubbed the same way the JSON one is.
+
+    Redaction used to live only inside :class:`JsonFormatter`, so with
+    ``LOG_JSON=false`` — the default, and what every local and docker-compose run
+    uses — none of it ran: the driver-error-quotes-the-DSN leak this whole
+    section exists for was written out verbatim, and every safeguard in
+    tests/test_logs.py was exercising a formatter that was not installed.
+
+    Extras are not printed by this format, so there is nothing for _DENY_KEYS to
+    do here; the message and the traceback are the whole surface.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(_PLAIN_FORMAT)
+
+    def format(self, record: logging.LogRecord) -> str:
+        return redact(super().format(record))
 
 
 class JsonFormatter(logging.Formatter):
@@ -351,9 +415,7 @@ def setup_logging(level: str | None = None, json_output: bool | None = None) -> 
         root.removeHandler(existing)
 
     handler = logging.StreamHandler(sys.stderr)
-    handler.setFormatter(
-        JsonFormatter() if as_json else logging.Formatter(_PLAIN_FORMAT)
-    )
+    handler.setFormatter(JsonFormatter() if as_json else PlainFormatter())
     handler._arabic_rag = True  # type: ignore[attr-defined]  # marks it as ours to replace
     root.addHandler(handler)
     root.setLevel(_resolved_level(level or settings.log_level))

@@ -58,6 +58,7 @@ question would have found.
 
 from __future__ import annotations
 
+import logging
 import time
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
@@ -88,7 +89,7 @@ from app.observability.tracing import (
 )
 from app.planning.dialect import GULF
 from app.planning.planner import Plan, Planner
-from app.retrieval.cache import CachedAnswer, lookup, store
+from app.retrieval.cache import CachedAnswer, foreign_scripts, lookup, store
 from app.retrieval.embed import Embedder
 from app.retrieval.rerank import RERANK_SOURCE, Reranker
 from app.retrieval.search import (
@@ -121,6 +122,40 @@ REFUSALS: dict[str, str] = {
     "msa": NOT_IN_CORPUS,
     GULF: "المواد المتوفرة ما فيها جواب عن هذا السؤال.",
 }
+
+#: Shown instead of a generation that came apart. Deliberately not one of
+#: REFUSALS: the corpus did have an answer and the generator mangled it, so
+#: "not in the materials" would be a false statement about the law.
+GARBLED = "تعذّر إنتاج إجابة سليمة لهذا السؤال. من فضلك أعد المحاولة."
+
+logger = logging.getLogger(__name__)
+
+
+def corrupted(text: str) -> bool:
+    """Whether the generator came apart mid-answer — and say so, loudly.
+
+    Lives here rather than inside :func:`cache.store` because the cache is not
+    the only thing that must refuse this text. The user gets the answer whether
+    or not it is cached, and with ``semantic_cache_enabled=false`` a check owned
+    by the cache never runs at all — so the one signal that the generator
+    misfired went missing in exactly the configuration that has no cache to
+    protect. ``store`` keeps a silent guard of its own as a last line.
+
+    # ponytail: detect-and-substitute, not detect-and-retry. Re-running the
+    # failover chain on a corrupt body needs the provider loop to take a
+    # content-level verdict, which it does not today (it retries on
+    # ProviderError.kind only). Upgrade path if this fires often enough to
+    # matter: pass a validator into FailoverProvider and treat a corrupt body as
+    # a retryable failure.
+    """
+    foreign = foreign_scripts(text)
+    if not foreign:
+        return False
+    logger.warning(
+        "generated answer contains characters from another script: %s",
+        " ".join(f"U+{ord(ch):04X} {ch!r}" for ch in foreign),
+    )
+    return True
 
 
 def _is_refusal_text(text: str) -> bool:
@@ -393,6 +428,12 @@ class RagService:
             if not settled:
                 self.spend.settle(prepared.reserved_usd, 0.0)
 
+        if corrupted(completion.text):
+            # Nothing has been sent yet on this path, so the corruption stops
+            # here instead of being handed to the reader as legal text. Usage is
+            # still reported: those tokens were genuinely billed.
+            return self._finish(prepared, GARBLED, completion.usage, started)
+
         await self._store(session, prepared, completion.text)
         return self._finish(prepared, completion.text, completion.usage, started)
 
@@ -478,7 +519,12 @@ class RagService:
                 spent = recorded[0].cost_usd if recorded else 0.0
                 self.spend.settle(prepared.reserved_usd, spent)
 
-        await self._store(session, prepared, "".join(chunks))
+        text = "".join(chunks)
+        # Called for the warning alone: every token is already on the wire, so
+        # substituting GARBLED the way `answer` does is not available here.
+        # Not caching it — which `_store` also refuses — is the ceiling.
+        corrupted(text)
+        await self._store(session, prepared, text)
         yield EVENT_FINAL, self._final_payload(prepared, usage, started)
         yield EVENT_DONE, {}
 

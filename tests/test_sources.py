@@ -154,3 +154,90 @@ def test_an_unparsable_article_degrades_to_the_law_page(article):
 
 def test_an_unknown_document_has_no_link_even_with_an_article():
     assert sources.source_url("something-a-user-posted", "3") is None
+
+
+@pytest.mark.parametrize(
+    "manifest",
+    [
+        '{"documents": ["not-an-object"]}',
+        '{"documents": "not-a-list"}',
+    ],
+)
+def test_a_malformed_manifest_costs_the_link_not_the_request(tmp_path, manifest):
+    """The loaders promise never to raise; they caught two exception types.
+
+    A `documents` entry that is a string makes `.get` raise AttributeError, and a
+    `sections` mapping iterates as its string keys — both escaped the inner catch
+    and 500'd every citation-bearing /ask, from one hand-edited manifest entry.
+    """
+    # Arrange
+    (tmp_path / "manifest.json").write_text(manifest, encoding="utf-8")
+    original = sources.CORPUS_DIR
+    sources.CORPUS_DIR = tmp_path
+    for cached in (sources.source_url, sources._manifest_urls, sources._manifest_sections):
+        cached.cache_clear()
+
+    # Act / Assert
+    try:
+        assert sources.source_url("x") is None
+        assert sources.source_url("x", 103) is None
+    finally:
+        sources.CORPUS_DIR = original
+        for cached in (sources.source_url, sources._manifest_urls, sources._manifest_sections):
+            cached.cache_clear()
+
+
+def test_a_corpus_dir_that_is_a_file_is_not_an_error(tmp_path):
+    # Arrange: NotADirectoryError is neither FileNotFoundError nor ValueError
+    not_a_dir = tmp_path / "corpus"
+    not_a_dir.write_text("{}", encoding="utf-8")
+    original = sources.CORPUS_DIR
+    sources.CORPUS_DIR = not_a_dir
+    for cached in (sources.source_url, sources._manifest_urls, sources._manifest_sections):
+        cached.cache_clear()
+
+    # Act / Assert
+    try:
+        assert sources.source_url("qatar-labour-law-14-2004") is None
+    finally:
+        sources.CORPUS_DIR = original
+        for cached in (sources.source_url, sources._manifest_urls, sources._manifest_sections):
+            cached.cache_clear()
+
+
+def test_a_malformed_sections_block_costs_the_anchor_not_the_link(tmp_path):
+    """`sections` as a mapping iterates as its string keys, so `s.get` hits a str.
+
+    That AttributeError escaped the inner (KeyError, TypeError, ValueError) catch
+    and left the whole function raising. The link itself is still good — only the
+    chapter anchor is lost, which is the documented degradation.
+    """
+    # Arrange
+    (tmp_path / "manifest.json").write_text(
+        json.dumps(
+            {
+                "documents": [
+                    {
+                        "doc_id": "x",
+                        "title": "t",
+                        "license": "l",
+                        "source_url": "https://e.test",
+                        "sections": {"a": 1},
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    original = sources.CORPUS_DIR
+    sources.CORPUS_DIR = tmp_path
+    for cached in (sources.source_url, sources._manifest_urls, sources._manifest_sections):
+        cached.cache_clear()
+
+    # Act / Assert
+    try:
+        assert sources.source_url("x", 103) == "https://e.test"
+    finally:
+        sources.CORPUS_DIR = original
+        for cached in (sources.source_url, sources._manifest_urls, sources._manifest_sections):
+            cached.cache_clear()

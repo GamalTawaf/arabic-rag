@@ -86,9 +86,6 @@ resource "google_sql_database_instance" "pg" {
 
       private_network = google_compute_network.vpc.id
 
-      # Lets the instance be reached over Private Service Connect paths from
-      # Google-managed services (the Cloud Run Cloud SQL connector among them)
-      # without a public address.
       # false: this lets *other* Google-managed services (BigQuery and friends)
       # reach the private IP over Google's backbone without entering this VPC.
       # Cloud Run already has a route via Direct VPC egress, so the flag buys

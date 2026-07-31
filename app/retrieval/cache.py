@@ -51,7 +51,6 @@ only if the threshold is lowered or the embedder swapped.
 
 from __future__ import annotations
 
-import logging
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -66,18 +65,22 @@ from app.models.chunks import EMBEDDING_DIMS
 from app.models.query_cache import CACHE_DIM, QueryCache
 from ingestion.normalize import normalize_query
 
-logger = logging.getLogger(__name__)
-
 _TOKEN = re.compile(r"\w+")
 _DIGITS = re.compile(r"\d+")
 
 # Codepoint ranges an answer about Qatari labour law can legitimately contain.
-# ASCII covers Latin acronyms (ILO C189), digits, % and punctuation; the Arabic
-# blocks cover the answer itself; General Punctuation covers the ellipsis, the
-# en/em dashes and the bidi marks that Arabic text carries. Anything outside
-# these is not a stylistic choice, it is the generator coming apart.
+# Printable ASCII covers Latin acronyms (ILO C189), digits, % and punctuation;
+# the Arabic blocks cover the answer itself; General Punctuation covers the
+# ellipsis, the en/em dashes and the bidi marks that Arabic text carries.
+# Anything outside these is not a stylistic choice, it is the generator coming
+# apart.
+#
+# Printable ASCII *starts at 0x20*, not 0x00: the C0 control characters are the
+# same class of garbage this check exists to catch, and a NUL additionally makes
+# asyncpg reject the INSERT — a 500 after the generation has already been paid
+# for. \t\n\r are allowed back below; DEL (0x7F) is not.
 _ALLOWED_RANGES = (
-    (0x0000, 0x007F),  # ASCII
+    (0x0020, 0x007E),  # printable ASCII
     (0x0600, 0x06FF),  # Arabic
     (0x0750, 0x077F),  # Arabic Supplement
     (0x08A0, 0x08FF),  # Arabic Extended-A
@@ -85,6 +88,14 @@ _ALLOWED_RANGES = (
     (0xFB50, 0xFDFF),  # Arabic Presentation Forms-A
     (0xFE70, 0xFEFF),  # Arabic Presentation Forms-B
 )
+
+# Listed one by one rather than as a range, because the rest of Latin-1 is
+# accented Latin letters — inside an Arabic answer those are corruption, not
+# style. « » are here because the corpus itself uses them: data/corpus/
+# qatar-labour-law-14-2004.txt wraps defined legal terms in guillemets, so the
+# model quotes them back and a gate that rejects them makes every answer citing
+# a defined term permanently uncacheable. NBSP is ordinary model output.
+_ALLOWED_CHARS = frozenset("\t\n\r\u00a0\u00ab\u00bb")  # tab/LF/CR, NBSP, « »
 
 
 def foreign_scripts(text: str) -> list[str]:
@@ -103,7 +114,8 @@ def foreign_scripts(text: str) -> list[str]:
     return [
         ch
         for ch in dict.fromkeys(text)
-        if not any(lo <= ord(ch) <= hi for lo, hi in _ALLOWED_RANGES)
+        if ch not in _ALLOWED_CHARS
+        and not any(lo <= ord(ch) <= hi for lo, hi in _ALLOWED_RANGES)
     ]
 
 # Written in *normalized* form (see ingestion.normalize: ة->ه, ى->ي, hamza
@@ -271,14 +283,12 @@ async def store(
     if not answer.strip():
         return
 
-    foreign = foreign_scripts(answer)
-    if foreign:
-        # Loud, because this is the only signal that the generator misfired: the
-        # request itself still succeeds and the user still gets this answer once.
-        logger.warning(
-            "not caching an answer containing characters from another script: %s",
-            " ".join(f"U+{ord(ch):04X} {ch!r}" for ch in foreign),
-        )
+    if foreign_scripts(answer):
+        # Silent, and second: :func:`app.service.corrupted` is what detects this
+        # and logs it, because that check runs whether or not the cache is on and
+        # is early enough to keep the corruption out of the response as well as
+        # out of the table. This stays as the last line of defence for any other
+        # caller.
         return
 
     session.add(

@@ -105,7 +105,12 @@ function parseExposition(text) {
   const samples = [];
   for (const line of text.split("\n")) {
     if (!line || line.startsWith("#")) continue;
-    const match = line.match(/^([a-zA-Z_:][a-zA-Z0-9_:]*)(\{.*\})?\s+(-?[\d.eE+]+|NaN|[+-]Inf)$/);
+    // The exponent needs its own sign class. Written as [\d.eE+] the "-" was
+    // only allowed in front, so 5e-05 — what prometheus_client emits for any
+    // float under 1e-4 — did not match and the sample was dropped without a
+    // trace: Spend read $0.0000 next to a nonzero token count, and a fast
+    // stage's _sum vanished so its mean rendered 0 ms with calls > 0.
+    const match = line.match(/^([a-zA-Z_:][a-zA-Z0-9_:]*)(\{.*\})?\s+(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|NaN|[+-]Inf)$/);
     if (!match) continue;
     samples.push({ name: match[1], labels: parseLabels(match[2]), value: Number(match[3]) });
   }
@@ -151,9 +156,17 @@ function stageRows(samples) {
   for (const s of samples) {
     const stage = s.labels.stage;
     if (!stage) continue;
-    const row = stages.get(stage) || { buckets: [], count: 0, sum: 0 };
+    const row = stages.get(stage) || { buckets: new Map(), count: 0, sum: 0 };
     if (s.name === "rag_stage_duration_seconds_bucket") {
-      row.buckets.push({ le: s.labels.le === "+Inf" ? Infinity : Number(s.labels.le), count: s.value });
+      // Summed per `le`, not appended. The histogram carries an error label
+      // (app/observability/tracing.py), so error="true" and error="false" are
+      // two series over the same buckets — pushing both into one list left
+      // quantileFromBuckets walking two interleaved cumulative counts, neither
+      // of which reaches 0.95 of their combined total. Measured: 80 ok + 40
+      // failed calls rendered p95 as "Infinity s". The dashboard was wrong
+      // precisely during an incident, which is when it gets opened.
+      const le = s.labels.le === "+Inf" ? Infinity : Number(s.labels.le);
+      row.buckets.set(le, (row.buckets.get(le) || 0) + s.value);
     } else if (s.name === "rag_stage_duration_seconds_count") {
       row.count += s.value;
     } else if (s.name === "rag_stage_duration_seconds_sum") {
@@ -166,7 +179,7 @@ function stageRows(samples) {
       stage,
       calls: row.count,
       mean: row.count ? row.sum / row.count : 0,
-      p95: quantileFromBuckets(row.buckets, row.count, 0.95),
+      p95: quantileFromBuckets([...row.buckets].map(([le, count]) => ({ le, count })), row.count, 0.95),
     }))
     .sort((a, b) => b.p95 - a.p95);
 }

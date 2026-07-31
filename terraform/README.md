@@ -46,12 +46,11 @@ second.
 | Two service accounts | `iam.tf` | runtime + Pub/Sub invoker. **Not** the default compute SA |
 | 9 project APIs | `apis.tf` | not disabled on destroy — see the comment there |
 
-Least privilege, concretely. The runtime service account holds exactly four
+Least privilege, concretely. The runtime service account holds exactly three
 roles, and two of them are bound to a single resource rather than the project:
 
 | Role | Scope | Why |
 |---|---|---|
-| `roles/cloudsql.client` | project | Cloud SQL exposes no instance-level binding for it |
 | `roles/cloudtrace.agent` | project | Cloud Trace has no finer resource |
 | `roles/pubsub.subscriber` | **one subscription** | not needed for push; it is the role a future pull worker needs |
 | `roles/secretmanager.secretAccessor` | **each secret, individually** | not "every secret in the project" |
@@ -201,7 +200,7 @@ cloud-sql-proxy "$(terraform output -raw database_connection_name)" --port 5432 
 
 export DATABASE_URL="postgresql+asyncpg://rag_user:PASSWORD@localhost:5432/rag_db"
 #   PASSWORD: gcloud secrets versions access latest --secret arabic-rag-database-url
-#   (that secret holds the full unix-socket URL; take the password out of it)
+#   (that secret holds the full private-IP URL; take the password out of it)
 
 alembic -c config/alembic.ini upgrade head  # creates the vector extension + schema
 python -m ingestion ingest               # 233 chunks from the committed corpus
