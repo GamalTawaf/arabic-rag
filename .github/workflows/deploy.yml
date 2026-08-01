@@ -129,6 +129,11 @@ jobs:
       # Fails the job if the new revision is not serving. Without this the deploy
       # is "gcloud exited 0", which is not the same as "the service works".
       - name: Smoke test
+        # `shell: bash` for the pipefail it brings. The default shell is `bash -e`
+        # with no pipefail, so `curl -fsS "$url/stats" | head -c 400` exited with
+        # head's 0 and a /stats returning 500 could not fail this step — the same
+        # trap ci.yml already fixed on its tee pipelines.
+        shell: bash
         run: |
           url=$(gcloud run services describe "$SERVICE_NAME" \
                   --region "$GCP_REGION" --format='value(status.url)')
@@ -138,20 +143,30 @@ jobs:
 
       # /health passes whether or not the collector survived the update, so a
       # deploy that dropped the sidecar would look green and go quiet instead of
-      # red. Assert the container is still there by name. If the sidecar is
-      # intentionally off (enable_prometheus_sidecar = false in terraform), this
-      # step is what you delete — not the --container flag above.
-      - name: Prometheus sidecar survived
+      # red. If the sidecar is intentionally off (enable_prometheus_sidecar =
+      # false in terraform), this step is what you delete — not the --container
+      # flag above.
+      #
+      # The whole set, not just "is collector present". `gcloud run services
+      # update --container NAME` ADDS a container when nothing of that name
+      # exists, so deploying against a service whose app container is unnamed or
+      # renamed grafts a second, portless container called `app` carrying the new
+      # image while the original keeps serving the old code — and /health, the
+      # collector check and the Summary all stay green over stale code. An exact
+      # match is the only assertion that catches that.
+      - name: Container set is exactly app + collector
+        shell: bash
         run: |
           containers=$(gcloud run services describe "$SERVICE_NAME" \
                          --region "$GCP_REGION" \
                          --format='value(spec.template.spec.containers[].name)')
           echo "containers: $containers"
           echo "CONTAINERS=$containers" >> "$GITHUB_ENV"
-          case ",${containers//;/,}," in
-            *,collector,*) ;;
-            *) echo "::error::collector container missing from the served revision"; exit 1 ;;
-          esac
+          names=$(echo "$containers" | tr ';' ' ' | xargs -n1 | sort | paste -sd, -)
+          if [[ "$names" != "app,collector" ]]; then
+            echo "::error::expected containers app,collector — got ${names:-none}"
+            exit 1
+          fi
 
       # if: always() — a failed deploy is when you most need to know which sha
       # was aimed at which project, and whether it got as far as serving.

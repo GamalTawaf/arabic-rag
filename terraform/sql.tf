@@ -19,9 +19,8 @@
 # takes the stack from ~$12.60/month to $0.50/month (the image) — which is the
 # entire reason this directory exists.
 #
-# Those are us-central1 list prices, arithmetic done here rather than measured:
-# there is no billing account attached to this repo and nothing here has ever
-# been applied. me-central1 (Doha) is not a tier-1 region and runs higher —
+# Those are us-central1 list prices, arithmetic done here rather than measured
+# against a bill. me-central1 (Doha) is not a tier-1 region and runs higher —
 # budget maybe 15-25% more. Verify against cloud.google.com/sql/pricing before
 # quoting these to anyone who is paying.
 # ============================================================================

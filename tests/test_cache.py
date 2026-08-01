@@ -269,3 +269,47 @@ async def test_lookup_never_matches_an_answer_from_another_pipeline(db_session):
     # Assert
     assert other is None
     assert same is not None and same.answer == ANSWER
+
+
+# The corpus wraps defined legal terms in guillemets («الأجر»), so the model
+# quotes them back. A gate that rejected them made every answer citing a defined
+# term permanently uncacheable — and logged "the generator misfired" each time.
+GUILLEMETS = "يشمل «الأجر الأساسي» البدلات [المادة 66]."
+
+
+async def test_store_keeps_an_answer_quoting_a_guillemet_term_from_the_corpus(db_session):
+    await store(db_session, QUESTION, unit_vector(0), "bge", PIPELINE, GUILLEMETS, [])
+
+    row = (await db_session.execute(select(QueryCache))).scalar_one()
+    assert row.answer == GUILLEMETS
+
+
+async def test_store_keeps_an_answer_containing_a_non_breaking_space(db_session):
+    # NBSP written as an escape: it is ordinary model output, it sits outside
+    # the ASCII range, and a literal one is invisible in a diff.
+    answer = "الحد الأقصى ثماني\u00a0ساعات [المادة 73]."
+
+    await store(db_session, QUESTION, unit_vector(0), "bge", PIPELINE, answer, [])
+
+    row = (await db_session.execute(select(QueryCache))).scalar_one()
+    assert row.answer == answer
+
+
+@pytest.mark.parametrize("control", ["\x00", "\x1b", "\x07", "\x7f"])
+async def test_store_ignores_an_answer_carrying_ascii_control_characters(db_session, control):
+    """Same class of garbage as the hiragana, and NUL additionally breaks the INSERT."""
+    await store(
+        db_session, QUESTION, unit_vector(0), "bge", PIPELINE, f"نص سليم{control}", []
+    )
+
+    assert (await db_session.execute(select(QueryCache))).first() is None
+
+
+@pytest.mark.parametrize("whitespace", ["\n", "\t", "\r"])
+async def test_store_keeps_an_answer_with_ordinary_whitespace(db_session, whitespace):
+    answer = f"سطر أول{whitespace}سطر ثانٍ [المادة 4]."
+
+    await store(db_session, QUESTION, unit_vector(0), "bge", PIPELINE, answer, [])
+
+    row = (await db_session.execute(select(QueryCache))).scalar_one()
+    assert row.answer == answer

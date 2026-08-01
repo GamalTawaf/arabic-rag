@@ -6,28 +6,30 @@ destroyed after, so steady-state cost is zero.
 
 ---
 
-## Read this first: this has never been applied
+## Read this first: what has and has not been proven
 
-**No `terraform apply` has ever been run against this configuration.** This
-repository has no GCP credentials, no billing account, and no project attached —
-by design, since the whole project is built to run at ~$0 on a laptop. Everything
-below is *validated-but-unproven infrastructure*:
+This configuration **has been applied**, once, and it built the live service at
+https://arabic-rag-656828441186.me-central1.run.app/. What that does and does not
+prove:
 
 | | |
 |---|---|
-| Syntax and schema | **verified** — see [Validation](#validation) for the exact commands and output |
-| Provider/resource arguments | **verified** against the real `hashicorp/google` 7.41.0 schema |
-| Plan against a project | never run |
-| Apply | never run |
-| Destroy | never run |
-| Any cost figure below | list-price arithmetic, never a billing statement |
+| Syntax and schema | **verified** — see [Validation](#validation) |
+| Apply against a real project | **done** — Cloud Run, private Cloud SQL, Pub/Sub, Secret Manager and both service accounts exist and serve traffic |
+| The private-IP database path | **proven working** — the built-in Cloud SQL connector reaches an instance with `ipv4_enabled = false` over Direct VPC egress, and the live service answers DB-backed questions through it |
+| Destroy | **never run** — the teardown path this stack's whole design argues for is the one step still untested |
+| A second environment | never attempted — one project, one operator, local state |
+| Any cost figure below | list-price arithmetic, never read off a billing statement |
 
-So: nothing here has been deployed. Treat the first `terraform apply` as an
-experiment, not a rollout, and read [What I would expect to break
-first](#what-i-would-expect-to-break-first) before running it in front of
-anybody. A reviewer can tell the difference between "this works" and "this
-type-checks", and claiming the first would be worth less than admitting the
-second.
+So the honest summary is the inverse of what it used to be: the build path works
+and is in production, and the *teardown* is the unproven half. `terraform
+destroy` against a stack with a Service Networking peering is the step most
+likely to need manual cleanup — read [What I would expect to break
+first](#what-i-would-expect-to-break-first) before relying on it.
+
+State is local and gitignored (`versions.tf` declares no backend), which is why
+CI deploys code and never infrastructure: a CI apply against no shared state
+would fight this state or silently recreate things.
 
 ---
 

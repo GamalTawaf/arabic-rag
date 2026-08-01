@@ -38,6 +38,7 @@ from app.service import (
     EVENT_ERROR,
     EVENT_FINAL,
     EVENT_TOKEN,
+    GARBLED,
     REFUSALS,
     RagService,
     _cited_scores,
@@ -712,3 +713,60 @@ async def test_a_client_disconnect_mid_stream_still_settles_the_spend(db_session
     spend = service.spend.today()
     assert spend.usd >= 0.0
     assert spend.usd < service.spend.cap_usd
+
+
+# ------------------------------------------ a generation that came apart mid-answer
+
+
+CORRUPT_TEXT = "صاحب العمل ملزم بضمان النظافة،&oその [&المادة 103]."
+
+
+async def test_a_corrupt_generation_is_not_handed_to_the_reader(db_session):
+    """The check used to live only in `cache.store`, so the user still got this.
+
+    On the non-streaming path the whole body exists server-side before anything
+    is sent, so corrupted legal text reaching the reader was a choice, not a
+    constraint.
+    """
+    # Arrange
+    await seed_corpus(db_session)
+    provider = FakeProvider(text=CORRUPT_TEXT)
+    service = make_service(provider=provider)
+
+    # Act
+    answer = await service.answer(db_session, MSA_QUESTION)
+
+    # Assert
+    assert answer.text == GARBLED
+    assert CORRUPT_TEXT not in answer.text
+    # the tokens were really billed, so usage is still reported
+    assert answer.usage is not None
+
+
+async def test_a_corrupt_generation_is_never_cached(db_session):
+    # Arrange
+    await seed_corpus(db_session)
+    service = make_service(provider=FakeProvider(text=CORRUPT_TEXT))
+
+    # Act
+    await service.answer(db_session, MSA_QUESTION)
+
+    # Assert
+    assert (await db_session.execute(select(QueryCache))).first() is None
+
+
+async def test_a_corrupt_generation_is_reported_even_with_the_cache_off(db_session, caplog):
+    """The warning was the only signal the generator misfired, and it lived in
+    the cache — so turning the cache off turned the signal off with it."""
+    # Arrange
+    await seed_corpus(db_session)
+    service = make_service(provider=FakeProvider(text=CORRUPT_TEXT))
+    service._cache_enabled = False
+
+    # Act
+    with caplog.at_level("WARNING"):
+        answer = await service.answer(db_session, MSA_QUESTION)
+
+    # Assert
+    assert answer.text == GARBLED
+    assert "another script" in caplog.text

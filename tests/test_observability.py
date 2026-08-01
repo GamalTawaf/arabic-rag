@@ -249,6 +249,53 @@ async def test_metrics_is_served_without_a_trailing_slash(client):
     assert "rag_requests" in response.text
 
 
+async def test_bare_metrics_advertises_the_format_it_actually_emits(client):
+    """The route hardcoded CONTENT_TYPE_LATEST over a generate_latest() body.
+
+    In the installed prometheus_client that constant advertises OpenMetrics
+    1.0.0 while generate_latest emits classic 0.0.4 text, so a strict scraper was
+    told to parse the body as a format it is not.
+    """
+    # Arrange
+    tracing.metrics_app()
+    tracing.record_request("/ask", "ok")
+
+    # Act
+    response = await client.get("/metrics")
+
+    # Assert: the default Accept gets the classic text format, correctly labelled
+    assert response.status_code == 200
+    assert "version=0.0.4" in response.headers["content-type"]
+    assert "rag_requests" in response.text
+
+
+async def test_bare_metrics_answers_head(client):
+    """An uptime monitor probing with HEAD read a GET-only route as absent."""
+    # Arrange
+    tracing.metrics_app()
+
+    # Act
+    response = await client.head("/metrics")
+
+    # Assert
+    assert response.status_code == 200
+
+
+async def test_bare_metrics_honours_an_openmetrics_accept_header(client):
+    # Arrange
+    tracing.metrics_app()
+    tracing.record_request("/ask", "ok")
+
+    # Act
+    response = await client.get(
+        "/metrics", headers={"Accept": "application/openmetrics-text; version=1.0.0"}
+    )
+
+    # Assert
+    assert response.status_code == 200
+    assert "openmetrics-text" in response.headers["content-type"]
+
+
 async def test_dashboard_page_is_served(client):
     # Act
     response = await client.get("/dashboard.html")

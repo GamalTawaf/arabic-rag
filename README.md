@@ -21,17 +21,31 @@ here (see below). With a key, the same frames stream from Claude or Gemini.
 
 All four phases are built — corpus and ingestion, eval dataset and benchmark,
 the `/ask` service with planning/generation/tracing/caching/spend-cap, and a
-Terraform stack for Cloud Run + Cloud SQL + Pub/Sub. 663 tests, a CI regression
+Terraform stack for Cloud Run + Cloud SQL + Pub/Sub. 717 tests, a CI regression
 gate on every PR, an on-demand dense gate and latency replay.
 
-**Two things have never run, and every claim below is written around that.**
-There is no LLM API key in this environment, so generation is unit-tested
-against mocked transports and `/ask` answers 503 until `ANTHROPIC_API_KEY` (or
-`GOOGLE_API_KEY`) is set. And there are no GCP credentials, so the Terraform is
-schema-validated against the real provider but has never been planned, applied or
-destroyed. Everything else — planning, retrieval, reranking, the refusal gate,
-the cache, the spend check, the traces, ingestion over HTTP and Pub/Sub — runs
-and is measured on this machine.
+**It is deployed and public:**
+**https://arabic-rag-656828441186.me-central1.run.app/** — Cloud Run in
+me-central1 (Doha), the jurisdiction the law it answers on actually governs. The
+Terraform in `terraform/` is what built it: private-IP Cloud SQL with no public
+address, secrets by reference from Secret Manager, a Managed Prometheus sidecar,
+keyless CI/CD over Workload Identity, and a $1/day generation cap against
+`max_instances = 2`. Generation runs through Hugging Face, with Anthropic and
+Gemini configured as failover.
+
+**What the deployed instance does *not* match is this README's benchmark
+tables**, and the difference is worth stating rather than glossing. Production
+runs `rerank_enabled = false` and has only the `bge` embedding column backfilled;
+the numbers below were measured on a laptop with the cross-encoder on. `GET
+/stats` on the live URL is the authoritative statement of what that instance is
+actually configured to do at any moment.
+
+**A fresh clone of this repository still has neither an LLM key nor GCP
+credentials**, so out of the box `/ask` answers 503 until `ANTHROPIC_API_KEY`,
+`GOOGLE_API_KEY` or `HF_API_KEY` is set — see [Run it end to
+end](#run-it-end-to-end). Everything else — planning, retrieval, reranking, the
+refusal gate, the cache, the spend check, the traces, ingestion over HTTP and
+Pub/Sub — runs and is measured locally with no key at all.
 
 | | |
 |---|---|
@@ -157,6 +171,11 @@ pip install -r config/requirements/dev.txt          # service + tests, no torch
 pip install -r config/requirements/models.txt       # sentence-transformers + torch (~2 GB)
 
 cp .env.example .env
+# Now open .env and fill in ONE LLM key — every value in it ships empty:
+#   ANTHROPIC_API_KEY=…   or   GOOGLE_API_KEY=…       (the default chain)
+#   HF_API_KEY=…          plus PROVIDERS=huggingface  (see the note below)
+# Everything up to `uvicorn` works without a key; only the answer itself needs one.
+
 docker compose up -d db                      # pgvector/pgvector:pg17 on :5433
 export DATABASE_URL=postgresql+asyncpg://rag_user:rag_pass@localhost:5433/rag_db
 
@@ -214,8 +233,16 @@ HTTP/1.1 503 Service Unavailable
  set ANTHROPIC_API_KEY in the environment or .env (see available_providers())"}
 ```
 
-**Set `ANTHROPIC_API_KEY` (or `GOOGLE_API_KEY` for the Gemini adapter) and the
-same request streams.** The frames below are the real output shape, captured from
+**Set `ANTHROPIC_API_KEY` (or `GOOGLE_API_KEY` for the Gemini adapter) in `.env`
+and the same request streams.** Those two are the default chain
+(`providers = "anthropic,gemini"` in `app/config.py`), so either one alone is
+enough and the other is the failover. Hugging Face is the third option and the
+one that needs a second variable: `HF_API_KEY` on its own changes nothing,
+because `huggingface` is not in the default chain — set `PROVIDERS=huggingface`
+alongside it, and set `HF_PRICE_*_USD_PER_MILLION` to your account's real rate,
+since that model's price is not a table in the code and the spend cap reads it.
+
+The frames below are the real output shape, captured from
 this pipeline with a stub provider standing in for the LLM — retrieval,
 citations, register detection and framing are genuine; the three `token` frames
 are the stub saying so, because no key exists here to produce real ones.
@@ -294,7 +321,7 @@ python -m benchmark.replay --n 30            # the latency-budget gate
 Tests and lint:
 
 ```bash
-pytest            # 575 pass, 1 skipped (it loads the 2 GB reranker; set
+pytest            # 716 pass, 1 skipped (it loads the 2 GB reranker; set
                   # RERANK_REAL_MODEL=1 to run it). Needs the rag_test database
                   # above — without it 170 more tests skip and pytest still
                   # exits 0.
@@ -472,21 +499,29 @@ scale-to-zero Cloud Run service is not. So the deployed stack has two halves:
   endpoint from inside the instance and writes to Cloud Monitoring, which does keep
   history — privately, since Cloud Monitoring is IAM-gated and has no public view.
 
-## The GCP stack (validated, never applied)
+## The GCP stack (applied, and serving the public URL)
 
 `terraform/` builds Cloud Run (gen2, scale-to-zero) + Cloud SQL Postgres 17 +
 Pub/Sub topic/push-subscription/DLQ + Artifact Registry + Secret Manager + two
 purpose-made service accounts, sized for a demo and designed to be destroyed the
 same day.
 
-**It has never been applied.** No GCP credentials, no billing account, no
-project. `terraform fmt -check` and `terraform validate` pass against the real
-`hashicorp/google` 7.41.0 schema — and the binary available here was OpenTofu
-1.12.2, not `terraform`, which
-[terraform/README.md § Validation](terraform/README.md#validation) states plainly
-rather than glossing. `plan`, `apply` and `destroy` have never run, every cost
-figure is list-price arithmetic with the working shown, and the README carries a
-ranked list of what would break first.
+**It has been applied**, and
+[the live service](https://arabic-rag-656828441186.me-central1.run.app/) is what
+it produced. Two details worth knowing, because both were load-bearing decisions:
+
+- **The database has no public address at all** (`ipv4_enabled = false`). Cloud
+  Run reaches it through the built-in Cloud SQL connector over Direct VPC egress —
+  verified working against a private-only instance, which is the part most write-ups
+  get wrong. A laptop cannot reach that database through any flag; schema runs from
+  the container's own entrypoint and the corpus loads over `POST /ingest`.
+- **Cost is bounded by design rather than by attention.** `DAILY_SPEND_CAP_USD` is
+  deployed at 1.0 against `max_instances = 2`, so an open `/ask` costs at most about
+  $2/day of generation, and the Cloud SQL instance — ~90% of steady-state cost — is
+  what `terraform destroy` is for.
+
+Every cost figure in `terraform/` is still list-price arithmetic with the working
+shown, not a reading off a bill.
 
 ## Layout
 
@@ -519,7 +554,7 @@ evals/
 benchmark/
   run.py                 the full matrix -> benchmark/results/results.json
   replay.py              the latency-budget gate
-terraform/            Cloud Run + Cloud SQL + Pub/Sub, validated, never applied
+terraform/            Cloud Run + Cloud SQL + Pub/Sub — applied; built the live URL
 dashboards/           Grafana JSON + Prometheus config, provisioned
 docs/                 benchmark, latency budget, refusal calibration, spec
 ```
@@ -532,17 +567,21 @@ and readable.
 
 Accurate as of the current commit.
 
-- **Live generation.** Both provider adapters, the failover policy, the context
-  fitter and the spend cap are written and unit-tested against mocked transports,
-  and none of them has ever spoken to an LLM. `/ask` 503s until a key is set.
+- **Generation is live on the deployed URL, not in a fresh clone.** The provider
+  adapters, failover policy, context fitter and spend cap run against a real
+  model in production (Hugging Face, with Anthropic and Gemini as failover). In
+  this repository they are unit-tested against mocked transports, and `/ask` 503s
+  until you set a key of your own.
 - **LLM-judged faithfulness/correctness evals.** The deterministic retrieval
   layer is what gates CI; the judged layer is designed (fixed judge model,
   versioned prompt, spend cap) and unwritten, and needs a key. Measuring model
   abstention against the 15 unanswerable pairs — the first replacement for the
   disabled score gate — is the same blocker.
-- **`terraform plan/apply/destroy`.** Never run. See
-  [the section above](#the-gcp-stack-validated-never-applied) and
-  terraform/README.md.
+- **A second environment.** The stack has been applied once, to one project, by
+  hand from a laptop holding local state (`terraform/versions.tf` declares no
+  remote backend). There is no staging environment and no shared state, so this
+  is a one-operator setup — CI deploys code, never infrastructure. See
+  [the section above](#the-gcp-stack-applied-and-serving-the-public-url).
 - **Model weights are not baked into the image.** The image installs CPU torch and
   `sentence-transformers` and imports cleanly (verified: 2.06 GB, `import app.main`
   succeeds), but bge-m3 and the cross-encoder — about 4.4 GB — download on first use

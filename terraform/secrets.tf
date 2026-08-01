@@ -1,10 +1,10 @@
-# Secret Manager. The Cloud Run service reads all three through
+# Secret Manager. The Cloud Run service reads all five through
 # `value_source.secret_key_ref` (run.tf), never as plaintext env values, so the
 # key text never appears in the service YAML, in `gcloud run services describe`,
 # or in a Cloud Console screenshot taken during a demo.
 #
 # Cost: ~$0.06 per active secret version per month, plus $0.03 per 10k accesses.
-# Three secrets is under $0.01/hour. Not the reason to destroy this stack.
+# Five secrets is under $0.01/hour. Not the reason to destroy this stack.
 
 locals {
   # secret id -> the env var the container reads it as. Names match app/config.py

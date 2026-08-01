@@ -228,7 +228,13 @@ resource "google_cloud_run_v2_service" "rag" {
         secret {
           secret = google_secret_manager_secret.gmp_config[0].secret_id
           items {
-            version = "latest"
+            # The resolved version, not "latest". "latest" is a constant in the
+            # revision template, so editing gmp_scrape_interval wrote a new secret
+            # version and changed nothing Cloud Run can see: no new revision, and
+            # running instances never re-resolve a mounted secret file. With
+            # min_instances > 0 the old interval would survive indefinitely while
+            # `terraform apply` reported success.
+            version = google_secret_manager_secret_version.gmp_config[0].version
             path    = "config.yaml" # the sidecar reads /etc/rungmp/config.yaml
           }
         }

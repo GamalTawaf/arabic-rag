@@ -8,7 +8,7 @@ test suite asserts on, because CI and the ``/health`` path must not pay for a
 
 from pathlib import Path
 
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, Request, Response
 from fastapi.staticfiles import StaticFiles
 
 from app.api import ask, health, ingest, stats
@@ -43,11 +43,28 @@ app.mount("/metrics", metrics_app())
 # the Managed Prometheus sidecar's RunMonitoring config (terraform/prometheus.tf)
 # and the dashboard page's fetch. Measured against the deployed service: bare
 # /metrics 404, /metrics/ 200.
-@app.get("/metrics", include_in_schema=False)
-async def metrics() -> Response:
-    from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+@app.api_route("/metrics", methods=["GET", "HEAD"], include_in_schema=False)
+async def metrics(request: Request) -> Response:
+    """Exposition at the bare path, negotiated the same way the mount does.
 
-    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+    Two things this does not do by hand, because doing them by hand is what was
+    wrong before. The encoder comes from ``choose_encoder(Accept)`` rather than
+    the body being ``generate_latest()`` under a hardcoded
+    ``CONTENT_TYPE_LATEST``: in the installed prometheus_client that constant
+    advertises OpenMetrics 1.0.0 while ``generate_latest`` emits classic 0.0.4
+    text, so the header described a body this endpoint does not produce. And
+    ``REGISTRY`` is named rather than left to a default, so this path and the
+    mounted app above are visibly reading the same collector — they were coupled
+    only by both happening to default to it.
+
+    HEAD is registered alongside GET because an uptime monitor that probes with
+    HEAD read a GET-only route as a missing endpoint.
+    """
+    from prometheus_client import REGISTRY
+    from prometheus_client.exposition import choose_encoder
+
+    encoder, content_type = choose_encoder(request.headers.get("Accept", ""))
+    return Response(encoder(REGISTRY), media_type=content_type)
 
 class RevalidatedStatic(StaticFiles):
     """StaticFiles that makes the browser check before reusing a page.
