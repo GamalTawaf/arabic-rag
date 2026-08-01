@@ -92,12 +92,15 @@ resource "google_cloud_run_v2_service" "rag" {
       }
     }
 
-    # No cloud_sql_instance volume. That is the built-in Cloud SQL connector, and
-    # its proxy runs in Google's serverless infrastructure, not in this VPC — it
-    # reaches an instance over its public address, which sql.tf deliberately does
-    # not have (ipv4_enabled = false, and no private path for Google-managed
-    # services either). The database is reached over the Direct VPC egress
-    # configured above, at the private IP DATABASE_URL names (secrets.tf).
+    # Cloud SQL Auth Proxy, mounted as a unix socket. No password on the wire, no
+    # IP allowlist, IAM-authenticated via roles/cloudsql.client. DATABASE_URL
+    # (secrets.tf) points at /cloudsql/<connection_name>.
+    volumes {
+      name = "cloudsql"
+      cloud_sql_instance {
+        instances = [google_sql_database_instance.pg.connection_name]
+      }
+    }
 
     # Named because the collector sidecar (prometheus.tf) declares a startup
     # dependency on it by name. A single-container service does not need a name;
@@ -140,6 +143,11 @@ resource "google_cloud_run_v2_service" "rag" {
 
         # Full CPU during startup regardless of the above. Free.
         startup_cpu_boost = true
+      }
+
+      volume_mounts {
+        name       = "cloudsql"
+        mount_path = "/cloudsql"
       }
 
       dynamic "env" {
@@ -224,9 +232,8 @@ resource "google_cloud_run_v2_service" "rag" {
             # revision template, so editing gmp_scrape_interval wrote a new secret
             # version and changed nothing Cloud Run can see: no new revision, and
             # running instances never re-resolve a mounted secret file. With
-            # min_instances > 0 the old interval survived indefinitely while
-            # `terraform apply` reported success. Naming the version makes a config
-            # change part of the template, which is what rolls a revision.
+            # min_instances > 0 the old interval would survive indefinitely while
+            # `terraform apply` reported success.
             version = google_secret_manager_secret_version.gmp_config[0].version
             path    = "config.yaml" # the sidecar reads /etc/rungmp/config.yaml
           }
@@ -244,6 +251,7 @@ resource "google_cloud_run_v2_service" "rag" {
     google_project_service.apis,
     google_secret_manager_secret_version.database_url,
     google_secret_manager_secret_version.llm_placeholder,
+    google_project_iam_member.runtime_cloudsql_client,
     google_secret_manager_secret_iam_member.runtime_secret_accessor,
   ]
 }
