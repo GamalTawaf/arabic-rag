@@ -105,6 +105,17 @@ def get_service() -> RagService:
         ) from exc
 
 
+def get_ingest_embedder() -> Embedder:
+    """The embedder new chunks are indexed with — the same one ``/ask`` queries.
+
+    Not optional: a chunk written with a NULL vector is invisible to dense
+    retrieval, so an ingest that skipped embedding would report success and then
+    never be found. The alternative is remembering to run
+    ``python -m ingestion backfill`` after every POST, which nobody will.
+    """
+    return build_embedder()
+
+
 def reset_singletons() -> None:
     """Drop every cached singleton. For tests; the service never calls it."""
     for builder in (
@@ -119,3 +130,4 @@ def reset_singletons() -> None:
 
 ServiceDep = Annotated[RagService, Depends(get_service)]
 SpendTrackerDep = Annotated[SpendTracker, Depends(get_spend_tracker)]
+EmbedderDep = Annotated[Embedder, Depends(get_ingest_embedder)]

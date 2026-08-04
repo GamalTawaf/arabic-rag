@@ -17,11 +17,11 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
-from app.api import ask as ask_module
 from app.config import settings
 from app.deps import get_service, reset_singletons
 from app.generation.base import ErrorKind, ProviderError
 from app.generation.failover import AllProvidersFailed
+from app.lib import rate_limit as limiter
 from app.main import app
 from app.observability.cost import SpendTracker
 from app.retrieval.cache import store as cache_store
@@ -413,9 +413,9 @@ async def test_the_422_for_an_unknown_config_lists_the_valid_ones(client, use_se
 @pytest.fixture(autouse=True)
 def _clear_rate_limiter():
     """The counter is module-level and would otherwise leak between tests."""
-    ask_module._hits.clear()
+    limiter._hits.clear()
     yield
-    ask_module._hits.clear()
+    limiter._hits.clear()
 
 
 async def test_the_rate_limiter_is_off_at_the_default_limit(client, use_service):
@@ -467,9 +467,9 @@ async def test_the_window_slides_so_old_requests_stop_counting(
     assert (await post(client, question=MSA_QUESTION, stream=False)).status_code == 429
 
     # Act — age every recorded hit past the window
-    for seen in ask_module._hits.values():
+    for seen in limiter._hits.values():
         for index, stamp in enumerate(seen):
-            seen[index] = stamp - ask_module.RATE_WINDOW_S
+            seen[index] = stamp - limiter.RATE_WINDOW_S
 
     # Assert
     assert (await post(client, question=MSA_QUESTION, stream=False)).status_code == 200
@@ -488,7 +488,7 @@ async def test_a_limit_of_zero_disables_the_limiter(client, use_service, monkeyp
 
     # Assert — and nothing was recorded to grow the dict
     assert statuses == [200] * 4
-    assert not ask_module._hits
+    assert not limiter._hits
 
 
 def test_the_rate_limiter_serialises_concurrent_threads(monkeypatch):
@@ -508,10 +508,10 @@ def test_the_rate_limiter_serialises_concurrent_threads(monkeypatch):
     """
     # Arrange — instrument the section so overlap is observable
     monkeypatch.setattr(settings, "ask_rate_limit_per_minute", 100)
-    ask_module._hits.clear()
+    limiter._hits.clear()
     depth = 0
     overlaps: list[int] = []
-    real_trim = ask_module._trim
+    real_trim = limiter._trim
 
     def instrumented(seen, now):
         nonlocal depth
@@ -522,14 +522,14 @@ def test_the_rate_limiter_serialises_concurrent_threads(monkeypatch):
         real_trim(seen, now)
         depth -= 1
 
-    monkeypatch.setattr(ask_module, "_trim", instrumented)
+    monkeypatch.setattr(limiter, "_trim", instrumented)
     request = SimpleNamespace(client=SimpleNamespace(host="9.9.9.9"))
     errors: list[BaseException] = []
 
     def call(barrier):
         barrier.wait()
         try:
-            ask_module.rate_limit(request)
+            limiter.rate_limit(request)
         except HTTPException:
             pass
         except BaseException as exc:  # noqa: BLE001 — that is the assertion
@@ -546,7 +546,7 @@ def test_the_rate_limiter_serialises_concurrent_threads(monkeypatch):
     # Assert — one at a time, and every request counted exactly once
     assert overlaps == [], f"{len(overlaps)} threads entered the section together"
     assert errors == []
-    assert len(ask_module._hits["9.9.9.9"]) == 8
+    assert len(limiter._hits["9.9.9.9"]) == 8
 
 
 def test_the_limiter_table_does_not_grow_without_bound(monkeypatch):
@@ -555,17 +555,17 @@ def test_the_limiter_table_does_not_grow_without_bound(monkeypatch):
     IP left a permanent entry — 5000 IPs measured as 5000 permanent entries."""
     # Arrange
     monkeypatch.setattr(settings, "ask_rate_limit_per_minute", 60)
-    monkeypatch.setattr(ask_module, "RATE_SWEEP_AT", 100)
-    ask_module._hits.clear()
+    monkeypatch.setattr(limiter, "RATE_SWEEP_AT", 100)
+    limiter._hits.clear()
 
     # Act — a spray of addresses that never come back
     for index in range(1000):
-        ask_module.rate_limit(
+        limiter.rate_limit(
             SimpleNamespace(client=SimpleNamespace(host=f"10.0.{index // 256}.{index % 256}"))
         )
-        for seen in ask_module._hits.values():
+        for seen in limiter._hits.values():
             for position, stamp in enumerate(seen):
-                seen[position] = stamp - ask_module.RATE_WINDOW_S
+                seen[position] = stamp - limiter.RATE_WINDOW_S
 
     # Assert — swept, not accumulated
-    assert len(ask_module._hits) <= ask_module.RATE_SWEEP_AT
+    assert len(limiter._hits) <= limiter.RATE_SWEEP_AT

@@ -586,7 +586,7 @@ Accurate as of the current commit.
   `sentence-transformers` and imports cleanly (verified: 2.06 GB, `import app.main`
   succeeds), but bge-m3 and the cross-encoder — about 4.4 GB — download on first use
   rather than at build time. On Cloud Run that lands as a slow first request after
-  each scale-to-zero cold start. The trade is noted in the `Dockerfile`.
+  each scale-to-zero cold start. The trade is noted in `config/Dockerfile`.
 - **The `LLMPlanner` ablation and the API-embedding rows** — OpenAI and Cohere
   embedding columns are wired and unit-tested against mocks, and both are 0% in
   `/stats` coverage because there is no key to backfill them with. Benchmark rows

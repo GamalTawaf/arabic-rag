@@ -47,7 +47,7 @@ docs/
 terraform/
 dashboards/
 docker-compose*.yml
-Dockerfile*
+config/Dockerfile*
 *.md
 
 # config/ is NOT excluded wholesale: alembic.ini and requirements/ are read
