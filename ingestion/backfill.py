@@ -20,7 +20,8 @@ from dataclasses import dataclass
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.chunks import EMBEDDING_COLUMNS, EMBEDDING_DIMS, Chunk
+from app.constants import EMBEDDING_COLUMNS, EMBEDDING_DIMS
+from app.models.chunks import Chunk
 from app.retrieval.embed import get_embedder
 
 DEFAULT_BATCH_SIZE = 32

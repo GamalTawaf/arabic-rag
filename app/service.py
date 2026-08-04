@@ -61,25 +61,36 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import AsyncIterator, Sequence
-from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
+from contextlib import aclosing, asynccontextmanager
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
-from app.generation.base import Provider, ProviderError, Usage, usage_cost_usd
-from app.generation.budget import (
+from app.constants import (
+    ANSWER_MAX_TOKENS,
+    CACHE_DIM,
+    CONFIGS,
+    DEFAULT_CONFIG,
+    EVENT_CITATIONS,
+    EVENT_DONE,
+    EVENT_ERROR,
+    EVENT_FINAL,
+    EVENT_TOKEN,
+    EXCERPT_CHARS,
+    GARBLED,
     NOT_IN_CORPUS,
-    build_prompt,
-    estimate_tokens,
-    fit_context,
+    REFUSALS,
+    RERANK_SOURCE,
 )
+from app.data import Answer, CachedAnswer, Citation, Hit, Plan, Prepared, Usage
+from app.db import session_scope
+from app.generation.base import Provider, ProviderError, usage_cost_usd
+from app.generation.budget import build_prompt, estimate_tokens, fit_context
 from app.generation.failover import AllProvidersFailed
 from app.lib.sources import source_url
 from app.models.chunks import Chunk
-from app.models.query_cache import CACHE_DIM
 from app.observability.cost import SpendTracker
 from app.observability.tracing import (
     record_cache_lookup,
@@ -87,46 +98,16 @@ from app.observability.tracing import (
     record_retrieval,
     span,
 )
-from app.planning.dialect import GULF
-from app.planning.planner import Plan, Planner
-from app.retrieval.cache import CachedAnswer, foreign_scripts, lookup, store
+from app.planning.planner import Planner
+from app.retrieval.cache import foreign_scripts, lookup, store
 from app.retrieval.embed import Embedder
-from app.retrieval.rerank import RERANK_SOURCE, Reranker
+from app.retrieval.rerank import Reranker
 from app.retrieval.search import (
-    Hit,
     dense_search,
     hybrid_search,
     lexical_search,
     rrf_fuse,
 )
-
-#: Retrieval configurations `/ask` accepts. Same names as the eval ablation
-#: table (``evals.harness.build_configs``) so a request and a benchmark row mean
-#: the same thing.
-CONFIGS: tuple[str, ...] = ("dense", "lexical", "hybrid", "hybrid+rerank")
-DEFAULT_CONFIG = "hybrid+rerank"
-
-ANSWER_MAX_TOKENS = 1024
-EXCERPT_CHARS = 240
-
-# Event names yielded by :meth:`RagService.stream`.
-EVENT_CITATIONS = "citations"
-EVENT_TOKEN = "token"
-EVENT_FINAL = "final"
-EVENT_ERROR = "error"
-EVENT_DONE = "done"
-
-# The refusal, per register. Answering a Gulf question in MSA is a jarring
-# register switch at exactly the moment the service is admitting it cannot help.
-REFUSALS: dict[str, str] = {
-    "msa": NOT_IN_CORPUS,
-    GULF: "المواد المتوفرة ما فيها جواب عن هذا السؤال.",
-}
-
-#: Shown instead of a generation that came apart. Deliberately not one of
-#: REFUSALS: the corpus did have an answer and the generator mangled it, so
-#: "not in the materials" would be a false statement about the law.
-GARBLED = "تعذّر إنتاج إجابة سليمة لهذا السؤال. من فضلك أعد المحاولة."
 
 logger = logging.getLogger(__name__)
 
@@ -175,56 +156,6 @@ def _is_refusal_text(text: str) -> bool:
     return any(
         stripped.startswith(refusal.rstrip(".")) for refusal in REFUSALS.values()
     )
-
-
-@dataclass(frozen=True)
-class Citation:
-    """One chunk the answer is allowed to rest on.
-
-    ``score`` is the score of the last stage that ranked it — a 0-1
-    cross-encoder value after rerank, an RRF or cosine score otherwise — so it is
-    only comparable within one response.
-    """
-
-    chunk_id: str
-    doc_id: str
-    article: str | None
-    score: float
-    excerpt: str
-    #: The law's page on the source portal, from the corpus manifest — what lets a
-    #: reader check the excerpt instead of trusting it. None for a document that
-    #: arrived over POST /ingest, which has no manifest entry (app/lib/sources.py).
-    source_url: str | None = None
-
-
-@dataclass(frozen=True)
-class Answer:
-    text: str
-    citations: list[Citation]
-    register: str  # "gulf" | "msa"
-    cached: bool
-    refused: bool
-    usage: Usage | None  # None on a cache hit and on a refusal — nothing was billed
-    stages: dict[str, float]  # per-stage wall time in milliseconds, plus "total"
-
-
-@dataclass(frozen=True)
-class _Prepared:
-    """Everything the pipeline decided before generation. Internal."""
-
-    plan: Plan
-    citations: list[Citation]
-    system: str
-    user: str
-    query_vec: list[float] | None
-    cached: CachedAnswer | None
-    refused: bool
-    config: str = DEFAULT_CONFIG
-    #: USD held against the daily cap by ``_reserve_spend``; 0.0 on the cached
-    #: and refused paths, which never reach a provider. Handed to
-    #: ``SpendTracker.settle`` exactly once, in a ``finally``.
-    reserved_usd: float = 0.0
-    stages: dict[str, float] = field(default_factory=dict)
 
 
 @asynccontextmanager
@@ -289,6 +220,20 @@ def error_payload(failure: AllProvidersFailed | ProviderError) -> dict:
     else:
         attempts = [{"provider": failure.provider, "reason": failure.reason}]
     return {"message": str(failure), "attempts": attempts}
+
+
+def answer_body(answer: Answer) -> dict:
+    """The JSON shape of a finished answer. Next to the payload helpers it uses."""
+    return {
+        "answer": answer.text,
+        "citations": citation_payload(answer.citations),
+        "register": answer.register,
+        "cached": answer.cached,
+        "refused": answer.refused,
+        "usage": usage_payload(answer.usage),
+        "cost_usd": answer.usage.cost_usd if answer.usage else 0.0,
+        "stages_ms": answer.stages,
+    }
 
 
 def usage_payload(usage: Usage | None) -> dict | None:
@@ -394,10 +339,45 @@ class RagService:
 
     # -- public ------------------------------------------------------------
 
-    async def answer(
-        self, session: AsyncSession, question: str, config: str = DEFAULT_CONFIG
-    ) -> Answer:
-        """Run the whole pipeline and return one finished answer."""
+    async def answer(self, question: str, config: str = DEFAULT_CONFIG) -> Answer:
+        """Run the whole pipeline and return one finished answer.
+
+        The session is opened here, not handed in: ``app.api.ask`` is a formatter
+        and has no business holding a connection.
+        """
+        async with session_scope() as session:
+            return await self._answer(session, question, config)
+
+    async def stream(
+        self, question: str, config: str = DEFAULT_CONFIG
+    ) -> AsyncIterator[tuple[str, dict]]:
+        """:meth:`_stream`, with a session held open for the life of the stream.
+
+        The connection is checked out until the last frame — the same lifetime
+        the route's dependency used to give it. Closing this generator (which
+        ``app.api.ask`` does on client disconnect) unwinds the ``async with`` and
+        returns it to the pool rather than leaving it to the GC.
+
+        ``aclosing`` is what makes that deterministic. ``async for`` does not
+        close the iterator it drives (PEP 525), so a bare delegation leaves
+        ``_stream`` suspended at its token ``yield`` when ``GeneratorExit``
+        unwinds *this* generator; its ``finally`` — the one that settles the
+        spend reservation — then runs whenever the event loop's asyncgen
+        finalizer hook gets round to it. Measured on this codebase it does in
+        fact run inside ``aclose()``, so the bare form is not visibly broken;
+        it is correct by GC timing rather than by construction, and a plain
+        two-generator repro shows the same shape needing a ~50 ms sleep before
+        the inner ``finally`` fires. One import buys the guarantee.
+        """
+        async with session_scope() as session, aclosing(
+            self._stream(session, question, config)
+        ) as events:
+            async for event in events:
+                yield event
+
+    # -- pipeline ----------------------------------------------------------
+
+    async def _answer(self, session: AsyncSession, question: str, config: str) -> Answer:
         started = time.perf_counter()
         prepared = await self._prepare(session, question, config)
 
@@ -437,8 +417,8 @@ class RagService:
         await self._store(session, prepared, completion.text)
         return self._finish(prepared, completion.text, completion.usage, started)
 
-    async def stream(
-        self, session: AsyncSession, question: str, config: str = DEFAULT_CONFIG
+    async def _stream(
+        self, session: AsyncSession, question: str, config: str
     ) -> AsyncIterator[tuple[str, dict]]:
         """Yield ``(event, payload)``: citations first, then tokens, then final, done.
 
@@ -528,11 +508,11 @@ class RagService:
         yield EVENT_FINAL, self._final_payload(prepared, usage, started)
         yield EVENT_DONE, {}
 
-    # -- pipeline ----------------------------------------------------------
+    # -- stages ------------------------------------------------------------
 
     async def _prepare(
         self, session: AsyncSession, question: str, config: str
-    ) -> _Prepared:
+    ) -> Prepared:
         """plan → embed → cache → retrieve → fuse → rerank → gate → budget → cap."""
         question = question.strip()
         if not question:
@@ -556,7 +536,7 @@ class RagService:
 
         cached = await self._lookup_cache(session, plan, query_vec, config, stages)
         if cached is not None:
-            return _Prepared(
+            return Prepared(
                 plan=plan,
                 citations=await _hydrate_citations(session, cached.citations),
                 system="",
@@ -573,7 +553,7 @@ class RagService:
 
         if self._is_refusal(hits):
             record_cache_lookup(hit=False)
-            return _Prepared(
+            return Prepared(
                 plan=plan,
                 citations=[],
                 system="",
@@ -588,7 +568,7 @@ class RagService:
         kept, _ = fit_context(hits, self.settings.max_context_tokens)
         system, user = build_prompt(plan.original, kept)
         reserved = self._reserve_spend(system, user)
-        return _Prepared(
+        return Prepared(
             plan=plan,
             citations=[_citation(hit) for hit in kept],
             system=system,
@@ -796,7 +776,7 @@ class RagService:
         )
 
     async def _store(
-        self, session: AsyncSession, prepared: _Prepared, text: str
+        self, session: AsyncSession, prepared: Prepared, text: str
     ) -> None:
         """Cache a generated answer. Refusals are never stored.
 
@@ -854,7 +834,7 @@ class RagService:
         )
 
     def _finish(
-        self, prepared: _Prepared, text: str, usage: Usage | None, started: float
+        self, prepared: Prepared, text: str, usage: Usage | None, started: float
     ) -> Answer:
         prepared.stages["total"] = round((time.perf_counter() - started) * 1000, 2)
         return Answer(
@@ -868,7 +848,7 @@ class RagService:
         )
 
     def _final_payload(
-        self, prepared: _Prepared, usage: Usage | None, started: float
+        self, prepared: Prepared, usage: Usage | None, started: float
     ) -> dict:
         prepared.stages["total"] = round((time.perf_counter() - started) * 1000, 2)
         return {

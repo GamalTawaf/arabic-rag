@@ -132,16 +132,6 @@ _NOUNS: dict[str, str] = {
     "يهالي": "أطفالي",  # (gulf 1)
 }
 
-# The definite-article demonstrative clitic: "هالمدة" = "هذه المدة". Handled as a
-# prefix rule in dialect.py rather than a table, because it is productive.
-HAL_PREFIX = "هال"
-HAL_MIN_LEN = 5  # هال + at least two letters, so "هالة" (halo) is never touched
-
-# Stems that must never be reached by stripping a leading و (see dialect._lookup).
-# "ولو" is MSA "even if", not "و + لو"; rewriting it to "وإذا" flips the meaning.
-# Measured: it is the only such collision across the 283 eval questions.
-WAW_BLOCKLIST: frozenset[str] = frozenset({"لو"})
-
 
 def _merge(*tables: dict[str, str]) -> dict[str, str]:
     """Merge the category tables, refusing to let one silently shadow another."""
@@ -158,28 +148,3 @@ def _merge(*tables: dict[str, str]) -> dict[str, str]:
 
 GULF_TO_MSA: dict[str, str] = _merge(_INTERROGATIVES, _PARTICLES, _VERBS, _NOUNS)
 
-# Register detection is a different job from rewriting, so it gets its own set.
-# Rule for membership: the token must be *unmistakably* Gulf. Tokens that are
-# ordinary MSA in another sense are excluded even though they are rewritten —
-# ``لو`` (MSA conditional), ``صار``/``يصير`` (MSA "became"), ``يقدر`` (MSA "is
-# able"), ``ولا`` (MSA "and not"), ``راتب`` (used across the Gulf press). Answering
-# an MSA question in dialect is a visible mistake; missing a marker is not.
-REGISTER_MARKERS: frozenset[str] = frozenset(
-    {
-        # interrogatives / relatives / particles
-        "شكثر", "شلون", "شنو", "وش", "وشو", "منو", "وين", "ليش", "كيفنا",
-        "اللي", "عشان", "علشان", "لين", "لسا", "بس", "احنا", "شوي", "خلاص",
-        "يعني", "مو", "مب", "الحين", "ببلاش", "جوه", "برا", "شي",
-        # verbs
-        "ابغي", "ابغا", "ابي", "يبغي", "يبي", "تبي", "بغيت", "ودي",
-        "اسوي", "نسوي", "يسوون", "سواها", "يدش", "اطفش", "يطيروني",
-        # nouns
-        "فلوس", "فلوسي", "فلوسه", "كفيل", "الكفيل", "لكفيلي",
-        "دريول", "الدريول", "خدامه", "الخدامه", "للخدامه",
-        "سنين", "كاش", "يهالي", "دكتور",
-        # شغل: colloquial for عمل. 0 of 229 MSA questions and 0 of 233 corpus
-        # chunks use it; every one says عمل. Safe, and it is what catches the
-        # otherwise MSA-looking "كم ساعة شغل باليوم".
-        "شغل", "الشغل", "بالشغل", "شغلي",
-    }
-)

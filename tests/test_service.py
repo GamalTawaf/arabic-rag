@@ -21,17 +21,7 @@ import pytest
 from sqlalchemy import func, select
 
 from app.config import settings
-from app.generation.base import Completion, ErrorKind, ProviderError, Usage
-from app.generation.budget import NOT_IN_CORPUS
-from app.generation.failover import AllProvidersFailed
-from app.models.chunks import Chunk
-from app.models.query_cache import QueryCache
-from app.observability.cost import SpendCapExceeded, SpendTracker
-from app.planning.planner import NoopPlanner, RuleBasedPlanner
-from app.retrieval.cache import store as cache_store
-from app.retrieval.rerank import RERANK_SOURCE
-from app.retrieval.search import Hit
-from app.service import (
+from app.constants import (
     DEFAULT_CONFIG,
     EVENT_CITATIONS,
     EVENT_DONE,
@@ -39,10 +29,19 @@ from app.service import (
     EVENT_FINAL,
     EVENT_TOKEN,
     GARBLED,
+    NOT_IN_CORPUS,
     REFUSALS,
-    RagService,
-    _cited_scores,
+    RERANK_SOURCE,
 )
+from app.data import Completion, Hit, Usage
+from app.generation.base import ErrorKind, ProviderError
+from app.generation.failover import AllProvidersFailed
+from app.models.chunks import Chunk
+from app.models.query_cache import QueryCache
+from app.observability.cost import SpendCapExceeded, SpendTracker
+from app.planning.planner import NoopPlanner, RuleBasedPlanner
+from app.retrieval.cache import store as cache_store
+from app.service import RagService, _cited_scores
 from ingestion.normalize import normalize_for_index
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -200,7 +199,7 @@ async def test_answer_returns_generated_text_and_citations(db_session):
     service = make_service(provider=provider)
 
     # Act
-    answer = await service.answer(db_session, MSA_QUESTION)
+    answer = await service.answer(MSA_QUESTION)
 
     # Assert
     assert answer.text == ANSWER_TEXT
@@ -218,7 +217,7 @@ async def test_every_pipeline_stage_is_timed(db_session):
     service = make_service()
 
     # Act
-    answer = await service.answer(db_session, MSA_QUESTION)
+    answer = await service.answer(MSA_QUESTION)
 
     # Assert — the stage list is the pipeline contract, not decoration
     assert set(answer.stages) == {
@@ -241,7 +240,7 @@ async def test_the_gulf_rewrite_is_retrieved_with_alongside_the_original(db_sess
     service = make_service(embedder=embedder)
 
     # Act
-    await service.answer(db_session, GULF_QUESTION)
+    await service.answer(GULF_QUESTION)
 
     # Assert — one batch, original first, MSA rewrite appended (never substituted)
     assert len(embedder.batches) == 1
@@ -259,7 +258,7 @@ async def test_rerank_scores_the_msa_rewrite_not_the_dialect_question(db_session
     service = make_service(reranker=reranker)
 
     # Act
-    await service.answer(db_session, GULF_QUESTION)
+    await service.answer(GULF_QUESTION)
 
     # Assert
     assert reranker.queries and "شكثر" not in reranker.queries[0]
@@ -288,7 +287,7 @@ async def test_cache_hit_returns_the_stored_answer_without_calling_the_provider(
     )
 
     # Act
-    answer = await service.answer(db_session, MSA_QUESTION)
+    answer = await service.answer(MSA_QUESTION)
 
     # Assert
     assert answer.cached is True
@@ -328,7 +327,7 @@ async def test_a_cache_hit_replays_the_stored_rerank_score(db_session):
     )
 
     # Act
-    answer = await service.answer(db_session, MSA_QUESTION)
+    answer = await service.answer(MSA_QUESTION)
 
     # Assert: a cached citation renders identically to a generated one, which is
     # the whole point — a 0.0 here made cached answers look unranked in any UI.
@@ -343,8 +342,8 @@ async def test_a_generated_answer_is_cached_and_the_next_call_reuses_it(db_sessi
     service = make_service(provider=provider)
 
     # Act
-    first = await service.answer(db_session, MSA_QUESTION)
-    second = await service.answer(db_session, MSA_QUESTION)
+    first = await service.answer(MSA_QUESTION)
+    second = await service.answer(MSA_QUESTION)
 
     # Assert
     assert first.cached is False and second.cached is True
@@ -361,8 +360,8 @@ async def test_a_refusal_is_never_cached(db_session):
     )
 
     # Act
-    first = await service.answer(db_session, MSA_QUESTION)
-    second = await service.answer(db_session, MSA_QUESTION)
+    first = await service.answer(MSA_QUESTION)
+    second = await service.answer(MSA_QUESTION)
 
     # Assert — a cached refusal would freeze a wrong "no" into the corpus
     assert first.refused is True
@@ -382,7 +381,7 @@ async def test_refusal_below_the_rerank_floor_skips_the_provider(db_session):
     )
 
     # Act
-    answer = await service.answer(db_session, MSA_QUESTION)
+    answer = await service.answer(MSA_QUESTION)
 
     # Assert
     assert answer.refused is True
@@ -398,7 +397,7 @@ async def test_a_gulf_question_is_refused_in_gulf(db_session):
     service = make_service(reranker=FakeReranker(score=0.0), rerank_min_score=0.15)
 
     # Act
-    answer = await service.answer(db_session, GULF_QUESTION)
+    answer = await service.answer(GULF_QUESTION)
 
     # Assert
     assert answer.register == "gulf"
@@ -411,7 +410,7 @@ async def test_an_empty_corpus_is_a_refusal_not_a_crash(db_session):
     service = make_service(provider=provider)
 
     # Act
-    answer = await service.answer(db_session, MSA_QUESTION)
+    answer = await service.answer(MSA_QUESTION)
 
     # Assert
     assert answer.refused is True
@@ -426,7 +425,7 @@ async def test_the_floor_is_not_applied_to_fusion_scores(db_session):
     service = make_service(provider=provider)
 
     # Act
-    answer = await service.answer(db_session, MSA_QUESTION, config="hybrid")
+    answer = await service.answer(MSA_QUESTION, config="hybrid")
 
     # Assert
     assert answer.refused is False
@@ -443,7 +442,7 @@ async def test_stream_emits_citations_first_then_tokens_then_final_then_done(db_
     service = make_service()
 
     # Act
-    events = await collect(service.stream(db_session, MSA_QUESTION))
+    events = await collect(service.stream(MSA_QUESTION))
 
     # Assert
     names = [name for name, _ in events]
@@ -469,7 +468,7 @@ async def test_stream_reports_a_generation_failure_as_an_error_event(db_session)
     service = make_service(provider=FakeProvider(error=failure))
 
     # Act
-    events = await collect(service.stream(db_session, MSA_QUESTION))
+    events = await collect(service.stream(MSA_QUESTION))
 
     # Assert
     names = [name for name, _ in events]
@@ -496,7 +495,7 @@ async def test_stream_serves_a_cache_hit_as_one_token_event(db_session):
     )
 
     # Act
-    events = await collect(service.stream(db_session, MSA_QUESTION))
+    events = await collect(service.stream(MSA_QUESTION))
 
     # Assert
     assert [name for name, _ in events] == [
@@ -521,7 +520,7 @@ async def test_the_spend_cap_is_checked_before_the_provider_is_called(db_session
 
     # Act / Assert
     with pytest.raises(SpendCapExceeded):
-        await service.answer(db_session, MSA_QUESTION)
+        await service.answer(MSA_QUESTION)
     assert provider.calls == 0
 
 
@@ -532,7 +531,7 @@ async def test_the_spend_cap_stops_a_stream_before_its_first_event(db_session):
 
     # Act / Assert — raising before the first yield is what lets /ask still 503
     with pytest.raises(SpendCapExceeded):
-        await collect(service.stream(db_session, MSA_QUESTION))
+        await collect(service.stream(MSA_QUESTION))
 
 
 async def test_a_generated_answer_is_recorded_against_the_days_spend(db_session):
@@ -542,7 +541,7 @@ async def test_a_generated_answer_is_recorded_against_the_days_spend(db_session)
     service = make_service(spend=spend)
 
     # Act
-    await service.answer(db_session, MSA_QUESTION)
+    await service.answer(MSA_QUESTION)
 
     # Assert
     assert spend.today().calls == 1
@@ -558,7 +557,7 @@ async def test_an_empty_question_is_rejected_at_the_service_boundary(db_session)
 
     # Act / Assert
     with pytest.raises(ValueError, match="must not be empty"):
-        await service.answer(db_session, "   ")
+        await service.answer("   ")
 
 
 async def test_an_unknown_config_names_the_valid_ones(db_session):
@@ -567,7 +566,7 @@ async def test_an_unknown_config_names_the_valid_ones(db_session):
 
     # Act / Assert
     with pytest.raises(ValueError, match="hybrid\\+rerank"):
-        await service.answer(db_session, MSA_QUESTION, config="dense+magic")
+        await service.answer(MSA_QUESTION, config="dense+magic")
 
 
 async def test_a_lexical_only_config_still_retrieves(db_session):
@@ -576,9 +575,7 @@ async def test_a_lexical_only_config_still_retrieves(db_session):
     service = make_service(planner=NoopPlanner())
 
     # Act
-    answer = await service.answer(
-        db_session, "الإشعار قبل إنهاء العقد", config="lexical"
-    )
+    answer = await service.answer("الإشعار قبل إنهاء العقد", config="lexical")
 
     # Assert
     assert answer.refused is False
@@ -594,7 +591,7 @@ async def test_a_provider_error_propagates_from_answer(db_session):
 
     # Act / Assert — a 401 is our bug; it must not be dressed up as an answer
     with pytest.raises(ProviderError):
-        await service.answer(db_session, MSA_QUESTION)
+        await service.answer(MSA_QUESTION)
 
 
 # ------------------------------------------------------------------ CI guard
@@ -644,8 +641,8 @@ async def test_a_model_generated_refusal_is_never_cached(db_session):
     service = make_service(provider=provider)
 
     # Act
-    first = await service.answer(db_session, MSA_QUESTION)
-    second = await service.answer(db_session, MSA_QUESTION)
+    first = await service.answer(MSA_QUESTION)
+    second = await service.answer(MSA_QUESTION)
 
     # Assert — nothing was stored, so the second request regenerates
     assert first.text == NOT_IN_CORPUS
@@ -662,8 +659,8 @@ async def test_a_real_answer_is_still_cached(db_session):
     service = make_service(provider=provider)
 
     # Act
-    await service.answer(db_session, MSA_QUESTION)
-    second = await service.answer(db_session, MSA_QUESTION)
+    await service.answer(MSA_QUESTION)
+    second = await service.answer(MSA_QUESTION)
 
     # Assert
     assert second.cached is True
@@ -678,10 +675,10 @@ async def test_the_same_question_under_a_different_config_is_not_served_from_cac
     await seed_corpus(db_session)
     provider = FakeProvider()
     service = make_service(provider=provider)
-    await service.answer(db_session, MSA_QUESTION, "hybrid+rerank")
+    await service.answer(MSA_QUESTION, "hybrid+rerank")
 
     # Act
-    other = await service.answer(db_session, MSA_QUESTION, "dense")
+    other = await service.answer(MSA_QUESTION, "dense")
 
     # Assert — a second real generation, not the first config's answer
     assert other.cached is False
@@ -703,16 +700,20 @@ async def test_a_client_disconnect_mid_stream_still_settles_the_spend(db_session
     service = make_service(provider=FakeProvider())
 
     # Act — consume one token frame, then abandon the generator as a client would
-    events = service.stream(db_session, MSA_QUESTION)
+    events = service.stream(MSA_QUESTION)
     async for name, _payload in events:
         if name == EVENT_TOKEN:
             break
+    held = service.spend.today().usd
     await events.aclose()
 
-    # Assert — the hold is released rather than left pinning the cap shut
-    spend = service.spend.today()
-    assert spend.usd >= 0.0
-    assert spend.usd < service.spend.cap_usd
+    # Assert — the hold is released, not merely "not negative". The old
+    # `usd >= 0.0` passed whether or not the settle ran at all; these fail if the
+    # reservation is still outstanding, which over repeat disconnects is what
+    # pinned the cap shut.
+    assert held > 0.0, "the reservation should still be held mid-stream"
+    assert service.spend.today().usd == 0.0
+    assert service.spend.today().calls == 1
 
 
 # ------------------------------------------ a generation that came apart mid-answer
@@ -734,7 +735,7 @@ async def test_a_corrupt_generation_is_not_handed_to_the_reader(db_session):
     service = make_service(provider=provider)
 
     # Act
-    answer = await service.answer(db_session, MSA_QUESTION)
+    answer = await service.answer(MSA_QUESTION)
 
     # Assert
     assert answer.text == GARBLED
@@ -749,7 +750,7 @@ async def test_a_corrupt_generation_is_never_cached(db_session):
     service = make_service(provider=FakeProvider(text=CORRUPT_TEXT))
 
     # Act
-    await service.answer(db_session, MSA_QUESTION)
+    await service.answer(MSA_QUESTION)
 
     # Assert
     assert (await db_session.execute(select(QueryCache))).first() is None
@@ -765,7 +766,7 @@ async def test_a_corrupt_generation_is_reported_even_with_the_cache_off(db_sessi
 
     # Act
     with caplog.at_level("WARNING"):
-        answer = await service.answer(db_session, MSA_QUESTION)
+        answer = await service.answer(MSA_QUESTION)
 
     # Assert
     assert answer.text == GARBLED

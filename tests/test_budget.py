@@ -1,15 +1,13 @@
 import pytest
 
+from app.constants import CHARS_PER_TOKEN, NOT_IN_CORPUS, SYSTEM_PROMPT
+from app.data import Hit
 from app.generation.budget import (
-    CHARS_PER_TOKEN,
-    NOT_IN_CORPUS,
-    SYSTEM_PROMPT,
     build_prompt,
     estimate_tokens,
     fit_context,
     render_hit,
 )
-from app.retrieval.search import Hit
 
 ARABIC_ARTICLE = "يجب على صاحب العمل أن يدفع الأجر شهرياً وفق أحكام هذا القانون"
 

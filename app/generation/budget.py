@@ -11,33 +11,8 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from app.retrieval.search import Hit
-
-# trade-off: Arabic runs about 3 characters per token on the Claude and Gemini
-# tokenizers (a 4-letter word plus its space is typically one or two tokens),
-# so length/3 is within ~10% and always rounds up. No tiktoken: it is the wrong
-# tokenizer for both providers, it is a dependency and a model download, and the
-# only consumer is a budget that already keeps a 512-token reserve. Ceiling:
-# a Latin-heavy or digit-heavy question is over-estimated. Upgrade path when
-# cost accounting needs exactness rather than safety — the provider's own
-# counter (Anthropic's /messages/count_tokens, Gemini's count_tokens).
-CHARS_PER_TOKEN = 3
-
-DEFAULT_RESERVE_TOKENS = 512  # question + system prompt + room for the answer
-
-SYSTEM_PROMPT = """\
-أنت مساعد قانوني يجيب عن أسئلة قانون العمل القطري اعتماداً على مواد مرفقة فقط.
-
-القواعد:
-1. أجب من المواد المرفقة وحدها. لا تستعن بمعرفة خارجية ولا تستنتج ما ليس فيها.
-2. اذكر رقم المادة بعد كل معلومة توردها، بهذه الصيغة: [المادة 12].
-3. أجب بنفس أسلوب السؤال: إن سُئلت بالعامية الخليجية فأجب بالعامية الخليجية، \
-وإن سُئلت بالفصحى فأجب بالفصحى.
-4. إن لم تكن الإجابة موجودة في المواد المرفقة فقل بوضوح: \
-"لا تتضمن المواد المتاحة إجابة عن هذا السؤال." ولا تضف أي تخمين.
-5. اختصر: من جملة إلى أربع جمل."""
-
-NOT_IN_CORPUS = "لا تتضمن المواد المتاحة إجابة عن هذا السؤال."
+from app.constants import CHARS_PER_TOKEN, DEFAULT_RESERVE_TOKENS, SYSTEM_PROMPT
+from app.data import Hit
 
 
 def estimate_tokens(text: str) -> int:

@@ -6,8 +6,19 @@ from sqlalchemy import distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models.chunks import EMBEDDING_COLUMNS, Chunk
+from app.constants import EMBEDDING_COLUMNS
+from app.db import session_scope
+from app.models.chunks import Chunk
 from app.models.query_cache import QueryCache
+
+
+async def read_stats() -> dict:
+    """Both indexed reads on one session — ``/stats`` is a single round trip."""
+    async with session_scope() as session:
+        return {
+            "corpus": await corpus_stats(session),
+            "cache": await cache_stats(session),
+        }
 
 
 async def corpus_stats(session: AsyncSession) -> dict:

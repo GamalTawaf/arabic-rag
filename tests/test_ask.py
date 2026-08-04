@@ -18,14 +18,7 @@ import pytest
 from fastapi import HTTPException
 
 from app.config import settings
-from app.deps import get_service, reset_singletons
-from app.generation.base import ErrorKind, ProviderError
-from app.generation.failover import AllProvidersFailed
-from app.lib import rate_limit as limiter
-from app.main import app
-from app.observability.cost import SpendTracker
-from app.retrieval.cache import store as cache_store
-from app.service import (
+from app.constants import (
     DEFAULT_CONFIG,
     EVENT_CITATIONS,
     EVENT_DONE,
@@ -33,6 +26,13 @@ from app.service import (
     EVENT_FINAL,
     EVENT_TOKEN,
 )
+from app.deps import get_service, reset_singletons
+from app.generation.base import ErrorKind, ProviderError
+from app.generation.failover import AllProvidersFailed
+from app.lib import rate_limit as limiter
+from app.main import app
+from app.observability.cost import SpendTracker
+from app.retrieval.cache import store as cache_store
 from tests.test_service import (
     ANSWER_TEXT,
     GULF_QUESTION,

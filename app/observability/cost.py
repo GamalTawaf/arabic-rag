@@ -10,42 +10,14 @@ Two things live here:
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from datetime import UTC, datetime
 
 from app.config import settings
-
-# Price per *million* tokens, keyed by model-id prefix so dated snapshots
-# ("claude-haiku-4-5-20251001") resolve to their family price.
-#
-# Anthropic rows are the published first-party API rates (verified 2026-06-24).
-# The Gemini row is Google's published list price and is NOT verifiable from
-# this repo — there are no API keys here. Re-check it before quoting a cost per
-# 1K queries in the writeup.
-#
-# trade-off: a hard-coded table, not a pricing API. Prices change a few times a
-# year; a wrong number here shows up as a wrong dashboard, not a wrong answer.
-# Upgrade path when that stops being acceptable: read it from a JSON file that
-# CI refreshes.
-PRICES_USD_PER_MTOK: dict[str, tuple[float, float]] = {
-    # model-id prefix: (input, output)
-    "claude-haiku-4-5": (1.00, 5.00),
-    "claude-sonnet-5": (3.00, 15.00),
-    "claude-opus-5": (5.00, 25.00),
-    "gemini-2.5-flash": (0.30, 2.50),
-    "gemini-2.5-pro": (1.25, 10.00),
-}
+from app.constants import PRICES_USD_PER_MTOK
+from app.data import Spend
 
 _PER_MTOK = 1_000_000
-
-
-@dataclass(frozen=True)
-class Spend:
-    """Accumulated spend for one UTC day."""
-
-    date: str  # ISO date, e.g. "2026-07-25"
-    usd: float
-    calls: int
 
 
 class SpendCapExceeded(Exception):

@@ -10,9 +10,9 @@ configured tracing (the eval harness, a CLI backfill), and the tracing helpers
 must never depend on a spend tracker existing.
 """
 
+from app.constants import PRICES_USD_PER_MTOK
+from app.data import Spend
 from app.observability.cost import (
-    PRICES_USD_PER_MTOK,
-    Spend,
     SpendCapExceeded,
     SpendTracker,
     estimate_cost_usd,

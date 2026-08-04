@@ -22,8 +22,9 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError, SQLAlchemyError
 
 from app.config import settings
-from app.db import SessionLocal, engine
-from app.models.chunks import EMBEDDING_COLUMNS, Chunk
+from app.constants import EMBEDDING_COLUMNS
+from app.db import engine, session_scope
+from app.models.chunks import Chunk
 from ingestion.backfill import DEFAULT_BATCH_SIZE, backfill_embeddings
 from ingestion.fetch import (
     DEFAULT_CORPUS_DIR,
@@ -55,7 +56,7 @@ def _run(coro: Awaitable[T]) -> int:
         try:
             await coro
         finally:
-            await engine.dispose()
+            await engine().dispose()
 
     try:
         asyncio.run(wrapped())
@@ -74,7 +75,7 @@ def _run(coro: Awaitable[T]) -> int:
 
 
 async def _ingest(docs: list[CorpusDoc]) -> None:
-    async with SessionLocal() as session:
+    async with session_scope() as session:
         stats = await ingest_documents(docs, session)
     print(
         f"ingested {stats.documents} documents -> {stats.chunks_written} chunks "
@@ -83,7 +84,7 @@ async def _ingest(docs: list[CorpusDoc]) -> None:
 
 
 async def _backfill(model_key: str, batch_size: int, only_missing: bool) -> None:
-    async with SessionLocal() as session:
+    async with session_scope() as session:
         stats = await backfill_embeddings(
             session, model_key, batch_size=batch_size, only_missing=only_missing
         )
@@ -103,7 +104,7 @@ async def _stats() -> None:
         .group_by(Chunk.doc_id)
         .order_by(Chunk.doc_id)
     )
-    async with SessionLocal() as session:
+    async with session_scope() as session:
         rows = (await session.execute(stmt)).all()
 
     if not rows:

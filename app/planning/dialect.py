@@ -23,17 +23,16 @@ from __future__ import annotations
 
 import re
 
-from app.planning.lexicon import (
-    GULF_TO_MSA,
+from app.constants import (
+    GULF,
     HAL_MIN_LEN,
     HAL_PREFIX,
+    MSA,
     REGISTER_MARKERS,
     WAW_BLOCKLIST,
 )
+from app.planning.lexicon import GULF_TO_MSA
 from ingestion.normalize import normalize_query
-
-GULF = "gulf"
-MSA = "msa"
 
 _WORD = re.compile(r"\w+")
 _WAW = "و"  # the coordinating clitic: "وشكثر" = و + شكثر

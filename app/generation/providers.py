@@ -25,34 +25,14 @@ from collections.abc import AsyncIterator, Callable
 from typing import Any
 
 from app.config import settings
+from app.constants import ANTHROPIC_PRICES, CHARS_PER_TOKEN, GEMINI_PRICES
+from app.data import Completion, Usage
 from app.generation.base import (
-    Completion,
     ErrorKind,
     Provider,
     ProviderError,
-    Usage,
     usage_cost_usd,
 )
-from app.generation.budget import CHARS_PER_TOKEN as _CHARS_PER_TOKEN
-
-# model id -> (USD / 1M input tokens, USD / 1M output tokens). Checked 2026-07.
-ANTHROPIC_PRICES: dict[str, tuple[float, float]] = {
-    "claude-haiku-4-5": (1.00, 5.00),
-    "claude-haiku-4-5-20251001": (1.00, 5.00),
-}
-
-# Checked 2026-07. Gemini 2.5 Flash text rates; output includes thinking tokens.
-GEMINI_PRICES: dict[str, tuple[float, float]] = {
-    "gemini-2.5-flash": (0.30, 2.50),
-}
-
-#: Re-exported, not redefined. This module used to carry its own
-#: ``CHARS_PER_TOKEN = 4`` ("the usual English ballpark") next to budget.py's
-#: researched Arabic value of 3, so the two halves of the same cost calculation
-#: disagreed by a third — and the one used for *billing* on the degraded path was
-#: the one that admitted in its own comment to being wrong on Arabic. One
-#: constant, defined where its reasoning lives.
-CHARS_PER_TOKEN = _CHARS_PER_TOKEN
 
 
 class AnthropicProvider:

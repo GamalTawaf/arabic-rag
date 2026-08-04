@@ -22,32 +22,19 @@ from __future__ import annotations
 import json
 import logging
 import re
-from dataclasses import dataclass
 from typing import Any, Protocol
 
-from app.planning.dialect import GULF, MSA, detect_register, gulf_to_msa
+from app.constants import (
+    GULF,
+    MAX_SEARCH_QUERIES,
+    MIN_SEGMENT_WORDS,
+    MSA,
+    STRATEGIES,
+)
+from app.data import Plan
+from app.planning.dialect import detect_register, gulf_to_msa
 
 logger = logging.getLogger(__name__)
-
-STRATEGIES = ("noop", "rules", "llm")
-MAX_SEARCH_QUERIES = 4  # original + rewrite + at most two sub-queries
-MIN_SEGMENT_WORDS = 3  # a two-word fragment is not a question, it is a fragment
-
-
-@dataclass(frozen=True)
-class Plan:
-    """What planning decided, in a form the retrieval and generation stages can read.
-
-    ``search_queries`` is what to retrieve with (one search per entry, fused);
-    ``register`` is what to answer in, and is independent of it — the corpus is
-    MSA, so retrieval is always MSA-flavoured even when the reply is not.
-    """
-
-    original: str
-    search_queries: list[str]
-    register: str  # "gulf" | "msa"
-    rewritten: str | None  # the MSA form, when a rewrite actually changed something
-    strategy: str  # "noop" | "rules" | "llm"
 
 
 class Planner(Protocol):

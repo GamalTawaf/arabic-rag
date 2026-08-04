@@ -1,8 +1,8 @@
 """``POST /ask`` — SSE by default, JSON on request.
 
-This module is a *formatter*. Every decision the answer depends on lives in
-:mod:`app.service`; what happens here is validation, SSE framing, and the
-mapping from pipeline exceptions to HTTP status codes:
+This module is a *formatter*: SSE framing and nothing else. The answer is
+decided in :mod:`app.service`, the request shape in :mod:`app.data`, and the
+mapping from a pipeline exception to a status code in :mod:`app.main`:
 
 ============================  ======  =========================================
 ``SpendCapExceeded``          503     the daily USD cap is spent
@@ -26,152 +26,38 @@ generation failure arrives as an ``error`` event instead — see
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field, field_validator
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db import get_db
+from app.constants import SSE_HEADERS, SSE_MEDIA_TYPE
+from app.data import AskRequest
 from app.deps import ServiceDep
-from app.generation.base import ProviderError
-from app.generation.failover import AllProvidersFailed
 from app.lib.rate_limit import rate_limit
 from app.lib.sse import sse_frame
-from app.observability.cost import SpendCapExceeded
 from app.observability.tracing import record_request
-from app.service import (
-    CONFIGS,
-    DEFAULT_CONFIG,
-    Answer,
-    citation_payload,
-    error_payload,
-    usage_payload,
-)
+from app.service import answer_body
 
 router = APIRouter(tags=["ask"])
 
-DbSession = Annotated[AsyncSession, Depends(get_db)]
-
-#: Long enough for any question in the eval set with room to spare, short enough
-#: that a pathological body never reaches the embedder or the tokenizer.
-MAX_QUESTION_CHARS = 1000
-
-SSE_MEDIA_TYPE = "text/event-stream"
-# Proxies love to buffer event streams; both headers are the conventional opt-out.
-SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
-
-
-class AskRequest(BaseModel):
-    question: str = Field(min_length=1, max_length=MAX_QUESTION_CHARS)
-    config: str = DEFAULT_CONFIG
-    stream: bool = True
-
-    @field_validator("question")
-    @classmethod
-    def _not_blank(cls, value: str) -> str:
-        if not value.strip():
-            raise ValueError("question must not be empty or whitespace")
-        return value
-
-    @field_validator("config")
-    @classmethod
-    def _known_config(cls, value: str) -> str:
-        if value not in CONFIGS:
-            raise ValueError(
-                f"unknown retrieval config {value!r}; expected one of {list(CONFIGS)}"
-            )
-        return value
-
-
-def _answer_body(answer: Answer) -> dict:
-    return {
-        "answer": answer.text,
-        "citations": citation_payload(answer.citations),
-        "register": answer.register,
-        "cached": answer.cached,
-        "refused": answer.refused,
-        "usage": usage_payload(answer.usage),
-        "cost_usd": answer.usage.cost_usd if answer.usage else 0.0,
-        "stages_ms": answer.stages,
-    }
-
-
-def _spend_cap_error(exc: SpendCapExceeded) -> HTTPException:
-    record_request("/ask", "spend_cap")
-    return HTTPException(
-        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-        detail={
-            "error": "daily_spend_cap_exceeded",
-            "message": str(exc),
-            "cap_usd": exc.cap_usd,
-            "spent_usd": round(exc.spend.usd, 6),
-            "calls": exc.spend.calls,
-            "date": exc.spend.date,
-            "remaining_usd": round(exc.remaining, 6),
-        },
-    )
-
-
-def _providers_failed_error(exc: AllProvidersFailed) -> HTTPException:
-    record_request("/ask", "providers_failed")
-    return HTTPException(
-        status_code=status.HTTP_502_BAD_GATEWAY,
-        detail={"error": "all_providers_failed", **error_payload(exc)},
-    )
-
-
-def _provider_error(exc: ProviderError) -> HTTPException:
-    """A single provider failing fatally — a revoked key is the common one.
-
-    ``FailoverProvider`` re-raises a FATAL error rather than trying the next
-    provider (the next one would fail identically), so it reaches the route as a
-    bare ``ProviderError`` and not as ``AllProvidersFailed``. The streaming path
-    already reported that as a structured ``error`` frame while this one let it
-    escape into a bare 500 with no body — same cause, two different answers
-    depending on a flag the caller set.
-    """
-    record_request("/ask", "providers_failed")
-    return HTTPException(
-        status_code=status.HTTP_502_BAD_GATEWAY,
-        detail={"error": "provider_failed", **error_payload(exc)},
-    )
-
 
 @router.post("/ask", dependencies=[Depends(rate_limit)])
-async def ask(payload: AskRequest, db: DbSession, service: ServiceDep):
+async def ask(payload: AskRequest, service: ServiceDep):
     if payload.stream:
-        return await _stream(payload, db, service)
+        return await _stream(payload, service)
 
-    try:
-        answer = await service.answer(db, payload.question, payload.config)
-    except SpendCapExceeded as exc:
-        raise _spend_cap_error(exc) from exc
-    except AllProvidersFailed as exc:
-        raise _providers_failed_error(exc) from exc
-    except ProviderError as exc:
-        raise _provider_error(exc) from exc
+    answer = await service.answer(payload.question, payload.config)
     record_request("/ask", "ok")
-    return _answer_body(answer)
+    return answer_body(answer)
 
 
-async def _stream(
-    payload: AskRequest, db: AsyncSession, service: ServiceDep
-) -> StreamingResponse:
-    events = service.stream(db, payload.question, payload.config)
+async def _stream(payload: AskRequest, service: ServiceDep) -> StreamingResponse:
+    events = service.stream(payload.question, payload.config)
     try:
+        # Pulled before a response exists, so a spend cap or a dead provider is
+        # still a status code — ``app.main`` turns each into one. After this the
+        # status line is committed and a failure can only be an `error` frame.
         first = await anext(events)
-    except SpendCapExceeded as exc:
-        await events.aclose()
-        raise _spend_cap_error(exc) from exc
-    except AllProvidersFailed as exc:  # pragma: no cover - generation is not open yet
-        await events.aclose()
-        raise _providers_failed_error(exc) from exc
-    except ProviderError as exc:
-        # Raised before the first frame, so a status code is still available.
-        await events.aclose()
-        raise _provider_error(exc) from exc
     except StopAsyncIteration as exc:  # pragma: no cover - stream always emits
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

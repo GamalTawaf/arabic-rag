@@ -49,12 +49,14 @@ from tenacity import (
 )
 
 from app.config import settings
-from app.generation.base import Completion, ErrorKind, Provider, ProviderError, Usage
-
-MAX_ATTEMPTS = 3  # per provider, including the first try
-RETRY_MULTIPLIER_S = 0.5
-RETRY_MAX_WAIT_S = 8.0
-FAILOVER_EVENT = "provider.failover"
+from app.constants import (
+    FAILOVER_EVENT,
+    MAX_ATTEMPTS,
+    RETRY_MAX_WAIT_S,
+    RETRY_MULTIPLIER_S,
+)
+from app.data import Completion, Usage
+from app.generation.base import ErrorKind, Provider, ProviderError
 
 T = TypeVar("T")
 

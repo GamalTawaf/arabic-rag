@@ -14,10 +14,10 @@ from pathlib import Path
 
 import pytest
 
-from app.generation.base import Completion, Usage
+from app.constants import MAX_SEARCH_QUERIES, REGISTER_MARKERS
+from app.data import Completion, Usage
 from app.planning import (
     GULF_TO_MSA,
-    REGISTER_MARKERS,
     LLMPlanner,
     NoopPlanner,
     PlannerUnavailable,
@@ -28,7 +28,6 @@ from app.planning import (
     gulf_to_msa,
 )
 from app.planning.lexicon import _merge
-from app.planning.planner import MAX_SEARCH_QUERIES
 from ingestion.normalize import normalize_query
 
 DATASET = Path(__file__).resolve().parents[1] / "evals" / "data" / "eval_pairs.jsonl"

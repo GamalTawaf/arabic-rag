@@ -32,7 +32,7 @@ from pathlib import Path
 
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.models.chunks import EMBEDDING_COLUMNS
+from app.constants import EMBEDDING_COLUMNS
 from evals.harness import BY_DOC_K, RetrievalConfig, build_configs, evaluate
 from evals.metrics import compare_to_baseline
 from evals.schema import load_pairs
@@ -256,7 +256,7 @@ anything.
 
 async def _measure(args: argparse.Namespace, config: RetrievalConfig) -> dict:
     """Run the harness once against the configured database."""
-    from app.db import SessionLocal, engine
+    from app.db import engine, session_scope
     from app.retrieval.embed import get_embedder
     from app.retrieval.rerank import get_reranker
 
@@ -265,10 +265,10 @@ async def _measure(args: argparse.Namespace, config: RetrievalConfig) -> dict:
     reranker = get_reranker("bge") if config.rerank else None
 
     try:
-        async with SessionLocal() as session:
+        async with session_scope() as session:
             return await evaluate(pairs, session, config, embedder, reranker)
     finally:
-        await engine.dispose()
+        await engine().dispose()
 
 
 def main(argv: list[str] | None = None) -> int:

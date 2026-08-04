@@ -54,12 +54,12 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models.chunks import EMBEDDING_COLUMNS
+from app.constants import EMBEDDING_COLUMNS
+from app.data import Hit
 from app.planning.planner import Planner
 from app.retrieval.embed import Embedder
 from app.retrieval.rerank import Reranker
 from app.retrieval.search import (
-    Hit,
     dense_search,
     hybrid_search,
     lexical_search,
@@ -765,7 +765,7 @@ def _collaborators(model_key: str) -> tuple[Embedder, Reranker, Planner]:
 
 async def _run(args: argparse.Namespace, pairs: Sequence[EvalPair], *, audit: bool) -> Any:
     """One pass of the expensive path over ``pairs``: scores, or the refusal audit."""
-    from app.db import SessionLocal, engine
+    from app.db import engine, session_scope
 
     _check_config(args.config)  # before the models load, not after
     verb = "auditing" if audit else "scoring"
@@ -777,13 +777,13 @@ async def _run(args: argparse.Namespace, pairs: Sequence[EvalPair], *, audit: bo
     )
     run = audit_refused if audit else score_pairs
     try:
-        async with SessionLocal() as session:
+        async with session_scope() as session:
             return await run(
                 pairs, session, *_collaborators(args.model), args.config,
                 progress=None if audit else sys.stderr,
             )
     finally:
-        await engine.dispose()
+        await engine().dispose()
 
 
 def _meta(args: argparse.Namespace) -> dict:

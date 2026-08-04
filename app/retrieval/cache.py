@@ -53,7 +53,6 @@ from __future__ import annotations
 
 import re
 from collections.abc import Sequence
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -61,8 +60,9 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models.chunks import EMBEDDING_DIMS
-from app.models.query_cache import CACHE_DIM, QueryCache
+from app.constants import CACHE_DIM, EMBEDDING_DIMS, NEGATION_PARTICLES
+from app.data import CachedAnswer
+from app.models.query_cache import QueryCache
 from ingestion.normalize import normalize_query
 
 _TOKEN = re.compile(r"\w+")
@@ -117,39 +117,6 @@ def foreign_scripts(text: str) -> list[str]:
         if ch not in _ALLOWED_CHARS
         and not any(lo <= ord(ch) <= hi for lo, hi in _ALLOWED_RANGES)
     ]
-
-# Written in *normalized* form (see ingestion.normalize: ة->ه, ى->ي, hamza
-# seats folded), because guard_key compares tokens of the normalized query.
-# Includes Gulf negations (مو/مب/ماكو) — the dialect questions are the point.
-NEGATION_PARTICLES = frozenset(
-    normalize_query(word)
-    for word in (
-        "لا",
-        "ما",
-        "لم",
-        "لن",
-        "ليس",
-        "ليست",
-        "غير",
-        "بدون",
-        "دون",
-        "مو",
-        "مب",
-        "ماكو",
-    )
-)
-
-
-@dataclass(frozen=True)
-class CachedAnswer:
-    answer: str
-    #: Opaque here on purpose: the cache stores and returns whatever
-    #: ``query_cache.citations`` holds, and
-    #: :func:`app.service._cited_scores` owns knowing that older rows are bare id
-    #: strings while current ones are ``{"chunk_id", "score"}`` objects.
-    citations: list[object]
-    similarity: float  # cosine, 1.0 == identical vector
-    age_seconds: float  # since the entry was created, not since its last hit
 
 
 def guard_key(text: str) -> tuple[tuple[str, ...], frozenset[str]]:
@@ -259,7 +226,12 @@ async def lookup(
         answer=row.answer,
         citations=list(row.citations or []),
         similarity=similarity,
-        age_seconds=(datetime.now(UTC) - row.created_at).total_seconds(),
+        # Two clocks: created_at is Postgres', now() is this process'. They are
+        # not the same machine in any real deployment and are ~1 ms apart even in
+        # local Docker, so a just-written row reads as negative age. Floored
+        # rather than measured server-side because nothing decides on this value
+        # — it is reported, and "-0.02 seconds old" is only ever noise.
+        age_seconds=max(0.0, (datetime.now(UTC) - row.created_at).total_seconds()),
     )
 
 

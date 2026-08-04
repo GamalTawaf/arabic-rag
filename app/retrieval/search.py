@@ -16,35 +16,27 @@ from __future__ import annotations
 import asyncio
 import re
 from collections.abc import Sequence
-from dataclasses import dataclass, replace
+from dataclasses import replace
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.models.chunks import EMBEDDING_COLUMNS, EMBEDDING_DIMS, Chunk
+from app.constants import (
+    DEFAULT_LIMIT,
+    EMBEDDING_COLUMNS,
+    EMBEDDING_DIMS,
+    MAX_QUERY_TOKENS,
+    MAX_TOKEN_CHARS,
+    RRF_K,
+)
+from app.data import Hit
+from app.models.chunks import Chunk
 from ingestion.normalize import normalize_query
-
-DEFAULT_LIMIT = 20
-RRF_K = 60  # the constant from Cormack et al. 2009; damps the top of each list
 
 # Query-side tsquery guards. Word characters only, so nothing a user types can
 # reach to_tsquery's operator syntax (& | ! <-> : parentheses); the caps keep a
 # pathological query from building a tsquery Postgres refuses to parse.
 _TOKEN = re.compile(r"\w+")
-MAX_TOKEN_CHARS = 64  # pg errors above 2047 bytes; no real Arabic word is close
-MAX_QUERY_TOKENS = 32  # longer than any question in the eval set
-
-
-@dataclass(frozen=True)
-class Hit:
-    """One retrieved chunk. ``score`` is only comparable within one ``source``."""
-
-    chunk_id: str
-    doc_id: str
-    article: str | None
-    text: str
-    score: float
-    source: str  # "dense" | "lexical" | "rrf"
 
 
 def _check_limit(limit: int) -> int:

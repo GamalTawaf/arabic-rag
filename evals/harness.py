@@ -28,9 +28,10 @@ from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.data import Hit
 from app.retrieval.embed import Embedder
 from app.retrieval.rerank import Reranker
-from app.retrieval.search import Hit, dense_search, hybrid_search, lexical_search
+from app.retrieval.search import dense_search, hybrid_search, lexical_search
 from evals.metrics import QueryResult, aggregate, recall_at_k
 from evals.schema import EvalPair
 

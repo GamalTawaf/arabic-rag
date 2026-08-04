@@ -9,12 +9,18 @@ test suite asserts on, because CI and the ``/health`` path must not pay for a
 from pathlib import Path
 
 from fastapi import FastAPI, Request, Response
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api import ask, health, ingest, stats
 from app.config import settings
+from app.generation.base import ProviderError
+from app.generation.failover import AllProvidersFailed
+from app.ingest_worker import StorageUnavailable
+from app.observability.cost import SpendCapExceeded
 from app.observability.logs import setup_logging
-from app.observability.tracing import metrics_app, setup_tracing
+from app.observability.tracing import metrics_app, record_request, setup_tracing
+from app.service import error_payload
 
 # First, before anything can log: uvicorn installs its own handlers, and a
 # handler added after the first log line means that line is formatted differently
@@ -27,6 +33,68 @@ app.include_router(health.router)
 app.include_router(ask.router)
 app.include_router(ingest.router)
 app.include_router(stats.router)
+
+
+# Pipeline failures → status codes. All of it lives here because the services
+# raise domain errors and the routers are formatters; neither should own the
+# mapping. A handler only fires while a status line is still available, which on
+# the streaming path means "before the first frame" — after that a failure is an
+# `error` event instead (see app.service.RagService.stream).
+
+
+@app.exception_handler(StorageUnavailable)
+async def storage_unavailable(request: Request, exc: StorageUnavailable) -> Response:
+    """A dead database is transient, so it must answer 5xx — never 2xx.
+
+    503 is what tells a client to retry and, more importantly, what stops Pub/Sub
+    from acking a message whose document was never written (app.api.ingest).
+    """
+    record_request(request.url.path, "db_error")
+    return JSONResponse({"detail": str(exc)}, status_code=503)
+
+
+@app.exception_handler(SpendCapExceeded)
+async def spend_cap_exceeded(request: Request, exc: SpendCapExceeded) -> Response:
+    record_request(request.url.path, "spend_cap")
+    return JSONResponse(
+        {
+            "detail": {
+                "error": "daily_spend_cap_exceeded",
+                "message": str(exc),
+                "cap_usd": exc.cap_usd,
+                "spent_usd": round(exc.spend.usd, 6),
+                "calls": exc.spend.calls,
+                "date": exc.spend.date,
+                "remaining_usd": round(exc.remaining, 6),
+            }
+        },
+        status_code=503,
+    )
+
+
+@app.exception_handler(AllProvidersFailed)
+async def all_providers_failed(request: Request, exc: AllProvidersFailed) -> Response:
+    record_request(request.url.path, "providers_failed")
+    return JSONResponse(
+        {"detail": {"error": "all_providers_failed", **error_payload(exc)}},
+        status_code=502,
+    )
+
+
+@app.exception_handler(ProviderError)
+async def provider_failed(request: Request, exc: ProviderError) -> Response:
+    """One provider failing fatally — a revoked key is the common one.
+
+    ``FailoverProvider`` re-raises a FATAL error rather than trying the next
+    provider (the next would fail identically), so it arrives as a bare
+    ``ProviderError``. Without this it escaped as a 500 with no body, while the
+    streaming path reported the same cause as a structured frame.
+    """
+    record_request(request.url.path, "providers_failed")
+    return JSONResponse(
+        {"detail": {"error": "provider_failed", **error_payload(exc)}},
+        status_code=502,
+    )
 
 # No-op unless an exporter is configured (OTEL_EXPORTER_OTLP_ENDPOINT or
 # OTEL_CONSOLE_EXPORT=1); see app/observability/tracing.py.
