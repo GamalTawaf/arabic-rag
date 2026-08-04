@@ -24,9 +24,9 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.exc import OperationalError
 
-from app.api.ingest import get_ingest_embedder
 from app.config import settings
 from app.db import get_db
+from app.deps import get_ingest_embedder
 from app.ingest_worker import MAX_TEXT_CHARS, RejectedMessage, decode_push
 from app.main import app
 from app.models.chunks import Chunk

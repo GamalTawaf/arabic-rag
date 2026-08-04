@@ -30,23 +30,22 @@ Unhandled failures still fall through to a 500, which is the right default for
 
 from __future__ import annotations
 
-import hmac
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
 from app.db import get_db
-from app.deps import build_embedder
+from app.deps import EmbedderDep
 from app.ingest_worker import (
     IngestDocument,
     RejectedMessage,
     decode_push,
     ingest_document,
 )
+from app.lib.auth import require_ingest_key
 from app.observability.tracing import record_request, span
 from app.retrieval.embed import Embedder
 from ingestion.pipeline import IngestStats
@@ -58,47 +57,7 @@ router = APIRouter(tags=["ingest"])
 DbSession = Annotated[AsyncSession, Depends(get_db)]
 
 
-def get_ingest_embedder() -> Embedder:
-    """The embedder new chunks are indexed with — the same one ``/ask`` queries.
-
-    Not optional: a chunk written with a NULL vector is invisible to dense
-    retrieval, so an ingest that skipped embedding would report success and then
-    never be found. The alternative is remembering to run
-    ``python -m ingestion backfill`` after every POST, which nobody will.
-    """
-    return build_embedder()
-
-
-EmbedderDep = Annotated[Embedder, Depends(get_ingest_embedder)]
-
 _DB_UNAVAILABLE = "ingestion storage is unavailable; retry"
-
-
-def require_ingest_key(x_api_key: Annotated[str | None, Header()] = None) -> None:
-    """Shared-secret gate on ``/ingest``, off unless ``INGEST_API_KEY`` is set.
-
-    Read at request time, not import time, so tests and deployments can flip it.
-    ``compare_digest`` rather than ``==`` because a shared secret compared with
-    an early-exit string comparison is timing-attackable.
-
-    # trade-off: one static key, no rotation, no per-caller identity, and it is
-    # the only thing between the open internet and a write path when Cloud Run is
-    # deployed with allow_unauthenticated (terraform's default). Adequate for a
-    # demo; the upgrade path is Cloud Run IAM + a service account, which is what
-    # /ingest/pubsub already uses (terraform/pubsub.tf) and needs no app code.
-    """
-    expected = settings.ingest_api_key
-    if not expected:
-        return
-    # Compared as bytes: compare_digest raises TypeError on a str containing any
-    # non-ASCII codepoint, and the header is attacker-controlled — an unauthorized
-    # caller could otherwise turn the auth gate into a 500 at will.
-    if x_api_key is None or not hmac.compare_digest(
-        x_api_key.encode("utf-8"), expected.encode("utf-8")
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid or missing x-api-key"
-        )
 
 
 def _counts(doc_id: str, stats: IngestStats, model_key: str) -> dict:
