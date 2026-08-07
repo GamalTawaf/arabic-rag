@@ -59,9 +59,13 @@
 <main>
   <nav class="nav" aria-label="Links">
     <a href="/">← the demo</a>
-    <a href="/metrics">raw /metrics</a>
-    <a href="/stats">/stats</a>
-    <a href="/docs">/docs</a>
+    <!-- Same rule as the demo page: ↗ is a new tab, and a destination with no
+         navigation of its own earns one. Raw exposition and Swagger UI are both
+         dead ends — following one in this tab leaves the reader on a wall of text
+         with nothing to click back to. -->
+    <a href="/metrics" target="_blank" rel="noopener">raw /metrics ↗</a>
+    <a href="/stats" target="_blank" rel="noopener">/stats ↗</a>
+    <a href="/docs" target="_blank" rel="noopener">/docs ↗</a>
     <a href="https://github.com/GamalTawaf/arabic-rag" target="_blank" rel="noreferrer noopener">source ↗</a>
   </nav>
   <h1>arabic-rag — live metrics</h1>

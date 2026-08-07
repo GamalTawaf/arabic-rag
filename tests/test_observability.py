@@ -329,8 +329,13 @@ async def test_interactive_api_docs_are_reachable_from_the_pages(client):
     # Arrange: both pages link to /docs. The mount at "/" is registered last, so
     # it cannot shadow the doc routes — but a docs_url=None would 404 the links
     # silently, and a dead link in the masthead is what nobody reports.
+    #
+    # target="_blank" is asserted because Swagger UI has no link back here: opened
+    # in place it strands the reader and discards the answer on screen. Matched
+    # together on one tag so reordering the attributes fails the test rather than
+    # letting the two drift onto different links.
     for page in ("/index.html", "/dashboard.html"):
-        assert 'href="/docs"' in (await client.get(page)).text
+        assert '<a href="/docs" target="_blank" rel="noopener">' in (await client.get(page)).text
 
     # Act / Assert: FastAPI's defaults, asserted rather than assumed.
     assert (await client.get("/docs")).status_code == 200
