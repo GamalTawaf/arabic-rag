@@ -32,19 +32,31 @@ ENV PYTHONUNBUFFERED=1
 ENV HF_HOME=/app/.cache/huggingface
 WORKDIR /app
 COPY --from=builder /install /usr/local
+## Non-root, and BEFORE the model bake, not after. `appuser` needs a writable /app
+## because HF_HOME points inside it — the baked embedder is read from there, and
+## anything not baked is downloaded into it.
+##
+## The ordering is load-bearing, not tidiness. `chown -R` rewrites the owner of every
+## file it walks, and an overlay layer records a full copy of every file it modifies —
+## so running this after the bake put a second complete copy of the 2.3 GB model in
+## the image, and put it in a layer sitting after `COPY . .`, which changes on every
+## commit. That is ~2.3 GB rebuilt, re-pushed and re-pulled per deploy, and no build
+## cache could help because the layer's input changed each time. Chowning here instead
+## walks an empty /app, and the bake below writes as appuser so the weights are owned
+## correctly on the way in. (Measured with a 200 MB stand-in: the chown layer weighed
+## the same as the payload layer.)
+RUN useradd --create-home --uid 10001 appuser \
+ && mkdir -p "$HF_HOME" \
+ && chown -R appuser:appuser /app
+USER appuser
 ## Bake bge-m3 (~2.3 GB) into the image. Every /ask embeds the query, so without this
 ## the first request on a cold instance downloads it from Hugging Face before it can
 ## answer — with min_instances = 0 that is every demo's first question. Image size is
 ## paid once at deploy; the download would be paid on every scale-from-zero.
 ## Its own layer, before `COPY . .`, so editing app code does not re-download it.
 RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('BAAI/bge-m3')"
-COPY . .
-## Non-root. `appuser` needs a writable /app because HF_HOME points inside it — the
-## baked embedder is read from there, and anything not baked is downloaded into it.
-RUN useradd --create-home --uid 10001 appuser \
- && mkdir -p "$HF_HOME" \
- && chown -R appuser:appuser /app
-USER appuser
+## --chown, because the copy runs as appuser but COPY defaults to root-owned files.
+COPY --chown=appuser:appuser . .
 EXPOSE 8000
 ## The entrypoint runs `alembic upgrade head` and then execs uvicorn with
 ## --proxy-headers (Cloud Run terminates TLS and puts the caller in
