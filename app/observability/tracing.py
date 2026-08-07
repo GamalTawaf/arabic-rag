@@ -33,10 +33,10 @@ from opentelemetry import metrics, trace
 from opentelemetry.trace import Span, Status, StatusCode, Tracer
 
 from app.config import settings
+from app.constants import INSTRUMENTATION_NAME
 
 log = logging.getLogger(__name__)
 
-INSTRUMENTATION_NAME = "arabic-rag"
 
 # --- Span attribute names -------------------------------------------------
 #

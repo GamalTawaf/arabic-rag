@@ -8,7 +8,7 @@ precisely to answer "is this instance actually loaded".
 from __future__ import annotations
 
 from app.config import settings
-from app.deps import SERVICE_MODEL_KEY
+from app.constants import SERVICE_MODEL_KEY
 from app.observability.cost import SpendTracker, get_spend_tracker
 from app.retrieval.cache import lookup as cache_lookup
 from app.retrieval.cache import store as cache_store

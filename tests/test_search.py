@@ -1,8 +1,9 @@
 import pytest
 
-from app.models.chunks import EMBEDDING_DIMS, Chunk
+from app.constants import EMBEDDING_DIMS
+from app.data import Hit
+from app.models.chunks import Chunk
 from app.retrieval.search import (
-    Hit,
     dense_search,
     hybrid_search,
     lexical_search,

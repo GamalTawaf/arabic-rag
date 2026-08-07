@@ -32,26 +32,15 @@ from tenacity import (
 )
 
 from app.config import settings
-from app.models.chunks import EMBEDDING_DIMS
-
-# model_key -> HuggingFace id, for the models that run locally.
-LOCAL_MODELS: dict[str, str] = {
-    "e5": "intfloat/multilingual-e5-large",
-    "bge": "BAAI/bge-m3",
-}
-
-# model_key -> (query prefix, passage prefix). Part of the model, not a style
-# choice: e5 is trained with these, bge-m3 is trained without and adding them
-# only adds noise.
-PREFIXES: dict[str, tuple[str, str]] = {
-    "e5": ("query: ", "passage: "),
-    "bge": ("", ""),
-}
-
-ST_BATCH = 16  # sentence-transformers batch; 16 x 512 tokens fits MPS comfortably
-API_BATCH = 96  # both OpenAI and Cohere accept far more; 96 keeps payloads small
-API_TIMEOUT_S = 60.0
-MAX_TRIES = 3
+from app.constants import (
+    API_BATCH,
+    API_TIMEOUT_S,
+    EMBEDDING_DIMS,
+    LOCAL_MODELS,
+    MAX_TRIES,
+    PREFIXES,
+    ST_BATCH,
+)
 
 
 class Embedder(Protocol):

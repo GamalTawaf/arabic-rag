@@ -1,11 +1,12 @@
 """Query planning: Gulf-dialect handling and question decomposition."""
 
-from app.planning.dialect import GULF, MSA, detect_register, gulf_to_msa
-from app.planning.lexicon import GULF_TO_MSA, REGISTER_MARKERS
+from app.constants import GULF, MSA, REGISTER_MARKERS
+from app.data import Plan
+from app.planning.dialect import detect_register, gulf_to_msa
+from app.planning.lexicon import GULF_TO_MSA
 from app.planning.planner import (
     LLMPlanner,
     NoopPlanner,
-    Plan,
     Planner,
     PlannerUnavailable,
     RuleBasedPlanner,

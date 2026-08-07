@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Annotated
 from fastapi import Depends, HTTPException, status
 
 from app.config import settings
+from app.constants import SERVICE_MODEL_KEY, SERVICE_PLANNER, SERVICE_RERANKER
 from app.observability.cost import SpendTracker, get_spend_tracker
 from app.retrieval.embed import Embedder, get_embedder
 from app.retrieval.rerank import Reranker, get_reranker
@@ -28,26 +29,6 @@ if TYPE_CHECKING:
     # are what keep torch and the provider SDKs off the /health import path.
     from app.generation.base import Provider
     from app.planning.planner import Planner
-
-#: The embedding model the *service* runs. Not ``settings.embedding_model``:
-#: that field names an API model (`text-embedding-3-large`) this deployment has
-#: no key for, and it is the benchmark's variable, not the service's.
-#:
-#: bge-m3 is the measured choice — recall@10 0.946 on the full eval set at
-#: ~2.6 ms mean / 3.9 ms p95, and a Gulf-dialect penalty of -0.4 points against
-#: e5's -9.9. It is also 1024-dim, which is what `query_cache` stores.
-#:
-#: # trade-off: a module constant, because config lives in app/config.py and that
-#: # file is not mine to edit. Upgrade path: add `retrieval_model_key: str =
-#: # "bge"` to Settings and read it here.
-SERVICE_MODEL_KEY = "bge"
-
-#: Cross-encoder reranker. "noop" keeps fusion order (the ablation baseline).
-SERVICE_RERANKER = "bge"
-
-#: Rule-based Gulf→MSA planning: measurable offline, needs no API key, and is
-#: the arm the phase-3 numbers were produced with.
-SERVICE_PLANNER = "rules"
 
 
 @cache

@@ -3,7 +3,8 @@ import math
 import pytest
 from sqlalchemy import select
 
-from app.models.query_cache import CACHE_DIM, QueryCache
+from app.constants import CACHE_DIM
+from app.models.query_cache import QueryCache
 from app.retrieval.cache import guard_key, lookup, store
 
 QUESTION = "كم مدة الإجازة السنوية للعامل؟"

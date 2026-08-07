@@ -23,9 +23,8 @@ from sqlalchemy import DateTime, Index, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.constants import CACHE_DIM
 from app.db import Base
-
-CACHE_DIM = 1024
 
 
 class QueryCache(Base):

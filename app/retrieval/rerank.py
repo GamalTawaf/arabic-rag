@@ -50,11 +50,12 @@ from collections.abc import Sequence
 from functools import cache
 from typing import Protocol
 
-from app.retrieval.search import Hit
-
-CROSS_ENCODER_MODEL = "BAAI/bge-reranker-v2-m3"
-MAX_SEQUENCE_LENGTH = 512  # query + chunk; longer pairs are truncated by the tokenizer
-RERANK_SOURCE = "rerank"
+from app.constants import (
+    CROSS_ENCODER_MODEL,
+    MAX_SEQUENCE_LENGTH,
+    RERANK_SOURCE,
+)
+from app.data import Hit
 
 
 class Reranker(Protocol):

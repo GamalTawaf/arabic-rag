@@ -22,19 +22,12 @@ from google.genai import errors as genai_errors
 from opentelemetry.sdk.trace import TracerProvider
 
 from app.config import settings
+from app.constants import ANTHROPIC_PRICES, CHARS_PER_TOKEN, GEMINI_PRICES
+from app.data import Completion, Usage
 from app.generation import failover as failover_module
-from app.generation.base import (
-    Completion,
-    ErrorKind,
-    ProviderError,
-    Usage,
-    usage_cost_usd,
-)
+from app.generation.base import ErrorKind, ProviderError, usage_cost_usd
 from app.generation.failover import AllProvidersFailed, FailoverProvider
 from app.generation.providers import (
-    ANTHROPIC_PRICES,
-    CHARS_PER_TOKEN,
-    GEMINI_PRICES,
     AnthropicProvider,
     GeminiProvider,
     HuggingFaceProvider,

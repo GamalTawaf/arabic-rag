@@ -1,6 +1,7 @@
 import pytest
 
-from app.models.chunks import EMBEDDING_DIMS, Chunk
+from app.constants import EMBEDDING_DIMS
+from app.models.chunks import Chunk
 from evals.harness import (
     CONFIGS,
     RetrievalConfig,

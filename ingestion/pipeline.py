@@ -15,7 +15,8 @@ from typing import Any, Protocol
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.chunks import EMBEDDING_COLUMNS, EMBEDDING_DIMS, Chunk
+from app.constants import EMBEDDING_COLUMNS, EMBEDDING_DIMS
+from app.models.chunks import Chunk
 from ingestion.chunk import chunk_document
 from ingestion.fetch import CorpusDoc
 from ingestion.normalize import normalize_for_index

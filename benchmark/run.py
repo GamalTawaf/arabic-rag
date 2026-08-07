@@ -41,8 +41,9 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models.chunks import EMBEDDING_COLUMNS, Chunk
-from app.retrieval.embed import LOCAL_MODELS, available_embedders, get_embedder
+from app.constants import EMBEDDING_COLUMNS, LOCAL_MODELS
+from app.models.chunks import Chunk
+from app.retrieval.embed import available_embedders, get_embedder
 from app.retrieval.rerank import get_reranker
 from evals.harness import build_configs, evaluate
 from evals.schema import EvalPair, load_pairs
@@ -542,7 +543,7 @@ def _parse_models(raw: str | None) -> list[str]:
 
 
 async def _main(args: argparse.Namespace) -> int:
-    from app.db import SessionLocal, engine
+    from app.db import engine, session_scope
 
     pairs = load_pairs(args.pairs)
     if args.limit:
@@ -553,10 +554,10 @@ async def _main(args: argparse.Namespace) -> int:
     _log(f"models: {model_keys or '(none)'}  device: {_device()}  db: {_safe_url()}")
 
     try:
-        async with SessionLocal() as session:
+        async with session_scope() as session:
             data = await run_benchmark(pairs, model_keys, session, args.pairs, smoke=bool(args.limit))
     finally:
-        await engine.dispose()
+        await engine().dispose()
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(

@@ -18,16 +18,18 @@ import json
 import logging
 import subprocess
 import sys
+from functools import cache
 from pathlib import Path
 
 import pytest
 from sqlalchemy import func, select
 from sqlalchemy.exc import OperationalError
 
+from app import db as app_db
 from app.config import settings
-from app.db import get_db
+from app.constants import MAX_TEXT_CHARS
 from app.deps import get_ingest_embedder
-from app.ingest_worker import MAX_TEXT_CHARS, RejectedMessage, decode_push
+from app.ingest_worker import RejectedMessage, decode_push
 from app.main import app
 from app.models.chunks import Chunk
 
@@ -62,7 +64,18 @@ class FakeEmbedder:
 
 
 class BrokenSession:
-    """A session whose every statement fails the way a dead Postgres fails."""
+    """A session whose every statement fails the way a dead Postgres fails.
+
+    Doubles as its own context manager so it can stand in for the factory
+    ``app.db.sessions()`` returns — the service opens its own session, so that
+    factory is the fault-injection seam.
+    """
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_exc) -> bool:
+        return False
 
     async def execute(self, *_args, **_kwargs):
         raise OperationalError(
@@ -163,9 +176,13 @@ async def test_ingested_chunks_are_embedded_so_dense_retrieval_can_find_them(
     assert [text for call in embedder.calls for text in call]  # the fake was used
 
 
-async def test_ingest_returns_503_when_the_database_is_down(client, db_session, embedder):
+async def test_ingest_returns_503_when_the_database_is_down(
+    client, db_session, embedder, monkeypatch
+):
     # Arrange
-    app.dependency_overrides[get_db] = lambda: BrokenSession()
+    # cache()d like the real `sessions`, so the engine fixture's teardown can
+    # still call reset_sessions() while this override is in place.
+    monkeypatch.setattr(app_db, "sessions", cache(lambda: BrokenSession))
 
     # Act
     response = await client.post("/ingest", json=document())
@@ -350,17 +367,19 @@ async def test_an_empty_body_is_acked(client, db_session, embedder):
 
 
 async def test_a_database_failure_returns_5xx_so_pubsub_retries(
-    client, db_session, embedder, caplog
+    client, db_session, embedder, caplog, monkeypatch
 ):
     """The other half of the taxonomy: transient failures must NOT be acked.
 
     Acking this would drop the document with no record that it ever existed.
     """
     # Arrange
-    app.dependency_overrides[get_db] = lambda: BrokenSession()
+    # cache()d like the real `sessions`, so the engine fixture's teardown can
+    # still call reset_sessions() while this override is in place.
+    monkeypatch.setattr(app_db, "sessions", cache(lambda: BrokenSession))
 
     # Act
-    with caplog.at_level(logging.ERROR, logger="app.api.ingest"):
+    with caplog.at_level(logging.ERROR, logger="app.ingest_worker"):
         response = await client.post("/ingest/pubsub", json=push_body())
 
     # Assert

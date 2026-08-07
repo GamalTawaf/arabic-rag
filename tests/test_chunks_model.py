@@ -1,6 +1,7 @@
 from sqlalchemy import func, select
 
-from app.models.chunks import EMBEDDING_COLUMNS, EMBEDDING_DIMS, Chunk
+from app.constants import EMBEDDING_COLUMNS, EMBEDDING_DIMS
+from app.models.chunks import Chunk
 
 # Arabic with diacritics; normalized form has them stripped and alef folded.
 ARABIC_WITH_DIACRITICS = "يَجِبُ عَلَى صَاحِبِ الْعَمَلِ أَنْ يَدْفَعَ الْأَجْرَ"
@@ -27,6 +28,23 @@ def test_embedding_columns_and_dims_cover_the_same_models():
 def test_embedding_column_names_exist_on_the_model():
     for column in EMBEDDING_COLUMNS.values():
         assert column in Chunk.__table__.columns
+
+
+def test_each_vector_column_is_as_wide_as_EMBEDDING_DIMS_claims():
+    """The dimension table and the DDL are in different files now.
+
+    ``EMBEDDING_DIMS`` lives in ``app.constants`` and is what
+    ``ingestion.pipeline``, ``ingestion.backfill`` and ``app.retrieval.search``
+    validate vectors against; the ``Vector(n)`` widths are here. Nothing else
+    ties them together, so an edit to one passes every dimension check and then
+    fails as an insert error against Postgres. This is the tie.
+    """
+    for model_key, column_name in EMBEDDING_COLUMNS.items():
+        column = Chunk.__table__.columns[column_name]
+        assert column.type.dim == EMBEDDING_DIMS[model_key], (
+            f"{column_name} is Vector({column.type.dim}) but EMBEDDING_DIMS says "
+            f"{model_key} is {EMBEDDING_DIMS[model_key]}-dim"
+        )
 
 
 async def test_insert_and_read_back_preserves_original_diacritics(db_session):

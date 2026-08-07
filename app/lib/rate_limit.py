@@ -9,14 +9,8 @@ from collections import deque
 from fastapi import HTTPException, Request, status
 
 from app.config import settings
+from app.constants import RATE_SWEEP_AT, RATE_WINDOW_S
 from app.observability.tracing import record_request
-
-RATE_WINDOW_S = 60.0
-
-#: Sweep every key once the table passes this many, so a spray of one-shot
-#: addresses cannot grow it without bound. A sweep is O(keys) and only runs when
-#: the table is already this large, so it is amortised to nothing.
-RATE_SWEEP_AT = 10_000
 
 #: client IP -> request timestamps inside the window. Module-level so it survives
 #: between requests; tests clear it. A plain dict, not a defaultdict: reading a

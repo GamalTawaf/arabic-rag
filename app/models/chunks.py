@@ -11,28 +11,8 @@ from sqlalchemy import Computed, DateTime, Index, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.constants import HNSW_INDEXED
 from app.db import Base
-
-# Benchmarked embedding models -> the column holding their vectors.
-EMBEDDING_COLUMNS: dict[str, str] = {
-    "e5": "emb_e5",
-    "bge": "emb_bge",
-    "openai": "emb_openai",
-    "cohere": "emb_cohere",
-}
-
-EMBEDDING_DIMS: dict[str, int] = {
-    "e5": 1024,  # intfloat/multilingual-e5-large
-    "bge": 1024,  # BAAI/bge-m3
-    "openai": 3072,  # text-embedding-3-large
-    "cohere": 1536,  # cohere embed-v4
-}
-
-# trade-off: HNSW ceiling in pgvector is 2000 dims, so emb_openai (3072) gets no
-# index — exact scan is fine at corpus scale (a few thousand chunks, single-digit
-# ms). Upgrade path when the corpus grows: store it as halfvec(3072) and index
-# with halfvec_cosine_ops, or reduce dimensions via the OpenAI `dimensions` param.
-HNSW_INDEXED = ("emb_e5", "emb_bge", "emb_cohere")
 
 
 def _hnsw(column: str) -> Index:

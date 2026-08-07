@@ -41,7 +41,7 @@ from typing import Any
 
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.service import CONFIGS, DEFAULT_CONFIG
+from app.constants import CONFIGS, DEFAULT_CONFIG
 from evals.schema import EvalPair, load_pairs
 
 DEFAULT_PAIRS = Path("evals/data/eval_pairs.jsonl")
@@ -348,7 +348,7 @@ async def replay(
     separately — the cost is real, it is just a start-up cost, and hiding it
     entirely would be the other kind of dishonest.
     """
-    from app.db import SessionLocal, engine
+    from app.db import engine, session_scope
 
     service, generated = _build_service(model_key)
     samples: dict[str, list[float]] = {}
@@ -356,7 +356,7 @@ async def replay(
     refusals = 0
 
     try:
-        async with SessionLocal() as session:
+        async with session_scope() as session:
             warmup, _, _ = await _replay_one(
                 service, session, pairs[0].question, config, generated
             )
@@ -369,7 +369,7 @@ async def replay(
                 for name, elapsed_ms in stages.items():
                     samples.setdefault(name, []).append(elapsed_ms)
     finally:
-        await engine.dispose()
+        await engine().dispose()
 
     return Run(
         samples=samples,

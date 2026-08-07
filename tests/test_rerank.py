@@ -15,9 +15,9 @@ import time
 
 import pytest
 
+from app.data import Hit
 from app.retrieval.rerank import (
     CrossEncoderReranker,
-    Hit,
     NoopReranker,
     _sigmoid,
     get_reranker,

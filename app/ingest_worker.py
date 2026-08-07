@@ -36,102 +36,27 @@ import base64
 import binascii
 import json
 import logging
-import re
-from dataclasses import dataclass
 from typing import Any
 
-from pydantic import BaseModel, Field, ValidationError, field_validator
-from sqlalchemy.ext.asyncio import AsyncSession
+from pydantic import ValidationError
+from sqlalchemy.exc import SQLAlchemyError
 
+from app.constants import MAX_PUSH_BODY_BYTES, POSTED_LICENSE
+from app.data import IngestDocument, PushMessage
+from app.db import session_scope
+from app.observability.tracing import span
 from ingestion.fetch import CorpusDoc
-from ingestion.pipeline import Embedder, IngestStats, ingest_documents
+from ingestion.pipeline import Embedder, ingest_documents
 
 log = logging.getLogger(__name__)
-
-#: Chunk ids are ``doc_id:article:seq``. A doc_id containing ``:`` would split
-#: into the wrong fields on every downstream parse, so the character is banned
-#: rather than escaped — see :meth:`IngestDocument._usable_in_a_chunk_id`.
-#: ``\A``/``\Z``, not ``^``/``$``: Python's ``$`` also matches immediately before
-#: a trailing newline, so ``"my-doc\n"`` passed this check and the newline went
-#: straight into the chunk primary key — where it is invisible in logs, breaks
-#: exact-match lookups against the clean id, and makes re-ingesting the same
-#: document write a second set of rows.
-MAX_DOC_ID_CHARS = 128
-DOC_ID_RE = re.compile(rf"\A[A-Za-z0-9][A-Za-z0-9._-]{{0,{MAX_DOC_ID_CHARS - 1}}}\Z")
-
-MAX_TITLE_CHARS = 300
-MAX_URL_CHARS = 2048
-
-#: The largest document in the committed corpus (Law 14/2004) is ~67k
-#: characters, so this is roughly 3x the real ceiling and still small enough
-#: that a body of this size cannot exhaust a Cloud Run instance's memory.
-MAX_TEXT_CHARS = 200_000
-
-#: Pub/Sub's own documented per-message limit. A push body larger than this did
-#: not come from Pub/Sub, so it is rejected before any parsing happens.
-MAX_PUSH_BODY_BYTES = 10 * 1024 * 1024
-
-#: ``CorpusDoc.license`` is required by the manifest loader but the ``chunks``
-#: table has no column for it, so a posted document carries a placeholder.
-POSTED_LICENSE = "unspecified"
 
 
 class RejectedMessage(ValueError):
     """A message that can never succeed. Ack it, log it, do not retry it."""
 
 
-class IngestDocument(BaseModel):
-    """One document to ingest. The trust boundary for both entrypoints.
-
-    ``extra`` is left at pydantic's default (ignore) rather than ``forbid``:
-    a push subscription that rejects unknown fields turns an additive change on
-    the publisher side into a total ingestion outage, every message poisoned at
-    once. Unknown fields are dropped instead.
-    """
-
-    doc_id: str = Field(min_length=1, max_length=MAX_DOC_ID_CHARS)
-    title: str = Field(min_length=1, max_length=MAX_TITLE_CHARS)
-    text: str = Field(min_length=1, max_length=MAX_TEXT_CHARS)
-    source_url: str | None = Field(default=None, max_length=MAX_URL_CHARS)
-
-    @field_validator("doc_id")
-    @classmethod
-    def _usable_in_a_chunk_id(cls, value: str) -> str:
-        if ":" in value:
-            raise ValueError(
-                "doc_id must not contain ':' — chunk ids are 'doc_id:article:seq', "
-                "so a colon here splits into the wrong fields and silently breaks "
-                "id parsing and every eval pair that names a chunk"
-            )
-        if not DOC_ID_RE.match(value):
-            raise ValueError(
-                "doc_id must start with a letter or digit and contain only "
-                f"letters, digits, '.', '_' and '-' (got {value!r})"
-            )
-        return value
-
-    @field_validator("title", "text")
-    @classmethod
-    def _not_blank(cls, value: str) -> str:
-        if not value.strip():
-            raise ValueError("must not be empty or whitespace")
-        return value
-
-    @field_validator("source_url")
-    @classmethod
-    def _http_url(cls, value: str | None) -> str | None:
-        if value is not None and not value.startswith(("http://", "https://")):
-            raise ValueError("source_url must be an http(s) URL")
-        return value
-
-
-@dataclass(frozen=True)
-class PushMessage:
-    """A decoded Pub/Sub push delivery. ``message_id`` is for logs only."""
-
-    document: IngestDocument
-    message_id: str
-    subscription: str
+class StorageUnavailable(RuntimeError):
+    """The database is unreachable. Transient — retry, never ack. See ``app.main``."""
 
 
 def decode_push(body: bytes) -> PushMessage:
@@ -180,12 +105,16 @@ def parse_document(payload: bytes) -> IngestDocument:
         raise RejectedMessage(f"message payload is not a valid document: {_why(exc)}") from exc
 
 
-async def ingest_document(
-    session: AsyncSession,
-    document: IngestDocument,
-    embedder: Embedder | None = None,
-) -> IngestStats:
-    """Chunk, normalize, embed and upsert one document. Commits before returning.
+async def ingest_document(document: IngestDocument, embedder: Embedder) -> dict:
+    """Chunk, normalize, embed and upsert one document; return its counts.
+
+    Opens its own session (``app.db.session_scope``) and commits before
+    returning, so a caller needs no database of its own — ``app.api.ingest``
+    passes a validated document and nothing else.
+
+    Raises :class:`StorageUnavailable`, never an HTTP exception: the status-code
+    mapping lives in ``app.main`` so this module keeps working under ``python
+    -m`` with no ASGI app around it.
 
     ``title``, ``source_url`` and the license are accepted for parity with the
     corpus manifest but the ``chunks`` table has a column for none of them, so
@@ -194,6 +123,16 @@ async def ingest_document(
     # trade-off: a `documents` table would keep them. Not built, because nothing
     # reads them yet — /ask cites chunk ids, and provenance lives in
     # data/corpus/manifest.json for the committed corpus.
+
+    # trade-off: embedding runs on the caller's request path. Measured on this
+    # laptop (Apple Silicon/MPS, local Postgres): a 2.6k-character document, 9
+    # chunks, 0.40 s warm and 7.9 s on the first call because that one loads
+    # bge-m3's weights. Ceiling: the request timeout — Cloud Run defaults to
+    # 300 s and its instances are CPU-only, several times slower than MPS, so a
+    # document of a few hundred chunks will time out and the client will retry
+    # it forever. Upgrade path: write the chunks with NULL vectors, return 202,
+    # and let `ingestion.backfill` fill the column out of band — that script
+    # already exists and already skips rows that have a vector.
     """
     doc = CorpusDoc(
         doc_id=document.doc_id,
@@ -202,7 +141,25 @@ async def ingest_document(
         license=POSTED_LICENSE,
         text=document.text,
     )
-    return await ingest_documents([doc], session, embedder)
+    attributes = {
+        "app.ingest.doc_id": document.doc_id,
+        "app.retrieval.model_key": embedder.model_key,
+    }
+    async with span("ingest", **attributes), session_scope() as session:
+        try:
+            stats = await ingest_documents([doc], session, embedder)
+        except SQLAlchemyError as exc:
+            log.exception("ingest of %s failed against the database", document.doc_id)
+            raise StorageUnavailable(
+                f"ingestion storage is unavailable; retry: {type(exc).__name__}"
+            ) from exc
+    return {
+        "doc_id": document.doc_id,
+        "documents": stats.documents,
+        "chunks_written": stats.chunks_written,
+        "chunks_skipped": stats.chunks_skipped,
+        "model_key": embedder.model_key,
+    }
 
 
 def _json_object(raw: bytes, what: str) -> dict[str, Any]:

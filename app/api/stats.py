@@ -12,35 +12,24 @@ instance that has never served an ``/ask``.
 
 from __future__ import annotations
 
-from typing import Annotated
-
-from fastapi import APIRouter, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter
 
 from app.config import settings
-from app.db import get_db
-from app.deps import (
-    SERVICE_MODEL_KEY,
-    SERVICE_PLANNER,
-    SERVICE_RERANKER,
-    SpendTrackerDep,
-)
+from app.constants import SERVICE_MODEL_KEY, SERVICE_PLANNER, SERVICE_RERANKER
+from app.deps import SpendTrackerDep
 from app.generation.providers import available_providers
-from app.lib.stats import cache_stats, corpus_stats
+from app.lib.stats import read_stats
 
 router = APIRouter(tags=["stats"])
 
-DbSession = Annotated[AsyncSession, Depends(get_db)]
-
 
 @router.get("/stats")
-async def stats(db: DbSession, spend: SpendTrackerDep):
+async def stats(spend: SpendTrackerDep):
     today = spend.today()
     configured = [name.strip() for name in settings.providers.split(",") if name.strip()]
     available = available_providers()
     return {
-        "corpus": await corpus_stats(db),
-        "cache": await cache_stats(db),
+        **await read_stats(),
         "spend": {
             "date": today.date,
             "usd": round(today.usd, 6),

@@ -5,7 +5,9 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from app.db import Base, get_db
+from app import db as app_db
+from app.config import settings
+from app.db import Base
 from app.main import app
 
 TEST_DATABASE_URL = os.getenv(
@@ -83,31 +85,48 @@ def pg_schema(pg_url):
 
 
 @pytest.fixture()
-async def db_session(pg_url, pg_schema):
+async def engine(pg_url, pg_schema, monkeypatch):
+    """Point ``app.db`` at the test database and hand back its engine.
+
+    Nothing private is patched: ``app.db.engine()`` builds itself from
+    ``settings.database_url`` on first use, so redirecting the whole app is one
+    setting plus a cache reset. The reset is also what keeps the pool inside the
+    test's event loop — a cached engine outliving its loop hands the next test
+    connections bound to a closed one.
+    """
     from sqlalchemy import text
 
-    engine = create_async_engine(pg_url)
+    monkeypatch.setattr(settings, "database_url", pg_url)
+    app_db.reset_sessions()
+    eng = app_db.engine()
     # trade-off: TRUNCATE per test rather than recreating the schema — the schema comes
     # from alembic once per session (pg_schema). Ceiling: tests share one database, so
     # they cannot run in parallel against it. Upgrade path: a database per xdist worker.
     tables = ", ".join(table.name for table in Base.metadata.sorted_tables)
-    async with engine.begin() as conn:
+    async with eng.begin() as conn:
         await conn.execute(text(f"TRUNCATE TABLE {tables} RESTART IDENTITY CASCADE"))
-    session_factory = async_sessionmaker(engine, expire_on_commit=False)
-    async with session_factory() as session:
+    yield eng
+    async with eng.begin() as conn:
+        await conn.execute(text(f"TRUNCATE TABLE {tables} RESTART IDENTITY CASCADE"))
+    await eng.dispose()
+    # Dispose *then* clear: leaving a disposed engine in the cache would hand the
+    # next caller connections bound to this test's closed event loop.
+    app_db.reset_sessions()
+
+
+@pytest.fixture()
+async def db_session(engine):
+    """A session for arranging rows and asserting on them.
+
+    Deliberately *not* the session the code under test uses — services open their
+    own now. It commits, they commit, and both read the same database.
+    """
+    async with async_sessionmaker(engine, expire_on_commit=False)() as session:
         yield session
-    async with engine.begin() as conn:
-        await conn.execute(text(f"TRUNCATE TABLE {tables} RESTART IDENTITY CASCADE"))
-    await engine.dispose()
 
 
 @pytest.fixture()
 async def client(db_session):
-    async def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
-    app.dependency_overrides.clear()

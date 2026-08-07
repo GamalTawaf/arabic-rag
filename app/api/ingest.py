@@ -31,91 +31,35 @@ Unhandled failures still fall through to a 500, which is the right default for
 from __future__ import annotations
 
 import logging
-from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, Depends, Request
 
-from app.db import get_db
+from app.data import IngestDocument
 from app.deps import EmbedderDep
-from app.ingest_worker import (
-    IngestDocument,
-    RejectedMessage,
-    decode_push,
-    ingest_document,
-)
+from app.ingest_worker import RejectedMessage, decode_push, ingest_document
 from app.lib.auth import require_ingest_key
-from app.observability.tracing import record_request, span
-from app.retrieval.embed import Embedder
-from ingestion.pipeline import IngestStats
+from app.observability.tracing import record_request
 
 log = logging.getLogger(__name__)
 
 router = APIRouter(tags=["ingest"])
 
-DbSession = Annotated[AsyncSession, Depends(get_db)]
-
-
-_DB_UNAVAILABLE = "ingestion storage is unavailable; retry"
-
-
-def _counts(doc_id: str, stats: IngestStats, model_key: str) -> dict:
-    return {
-        "doc_id": doc_id,
-        "documents": stats.documents,
-        "chunks_written": stats.chunks_written,
-        "chunks_skipped": stats.chunks_skipped,
-        "model_key": model_key,
-    }
-
-
-async def _ingest(
-    db: AsyncSession, document: IngestDocument, embedder: Embedder, route: str
-) -> IngestStats:
-    """Run the pipeline, turning a database failure into a retryable 503.
-
-    # trade-off: embedding runs on the request path. Measured on this laptop
-    # (Apple Silicon/MPS, local Postgres): a 2.6k-character document, 9 chunks,
-    # 0.40 s warm and 7.9 s on the first request because that one loads bge-m3's
-    # weights. Ceiling: the request timeout — Cloud Run defaults to 300 s and its
-    # instances are CPU-only, several times slower than MPS, so a document of a
-    # few hundred chunks will time out and the client will retry it forever.
-    # Upgrade path: write the chunks with NULL vectors, return 202, and let
-    # `ingestion.backfill` fill the column out of band — that script already
-    # exists and already skips rows that have a vector.
-    """
-    attributes = {
-        "app.ingest.doc_id": document.doc_id,
-        "app.retrieval.model_key": embedder.model_key,
-    }
-    async with span("ingest", **attributes):
-        try:
-            return await ingest_document(db, document, embedder)
-        except SQLAlchemyError as exc:
-            log.exception("ingest of %s failed against the database", document.doc_id)
-            record_request(route, "db_error")
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=f"{_DB_UNAVAILABLE}: {type(exc).__name__}",
-            ) from exc
-
 
 @router.post("/ingest", dependencies=[Depends(require_ingest_key)])
-async def ingest(document: IngestDocument, db: DbSession, embedder: EmbedderDep):
+async def ingest(document: IngestDocument, embedder: EmbedderDep):
     """Ingest one document synchronously: chunk -> normalize -> embed -> upsert.
 
     200 rather than 201 because every write is an upsert on a chunk id derived
     from the text — re-posting an edited document updates rows in place, and
     claiming "Created" for that would be a lie two thirds of the time.
     """
-    stats = await _ingest(db, document, embedder, "/ingest")
+    counts = await ingest_document(document, embedder)
     record_request("/ingest", "ok")
-    return _counts(document.doc_id, stats, embedder.model_key)
+    return counts
 
 
 @router.post("/ingest/pubsub")
-async def ingest_pubsub(request: Request, db: DbSession, embedder: EmbedderDep):
+async def ingest_pubsub(request: Request, embedder: EmbedderDep):
     """Pub/Sub push endpoint. Ack semantics are in this module's docstring.
 
     Redelivery is safe because ingestion is idempotent by chunk id; see
@@ -136,16 +80,12 @@ async def ingest_pubsub(request: Request, db: DbSession, embedder: EmbedderDep):
         record_request("/ingest/pubsub", "rejected")
         return {"status": "rejected", "reason": str(exc)}
 
-    stats = await _ingest(db, message.document, embedder, "/ingest/pubsub")
+    counts = await ingest_document(message.document, embedder)
     record_request("/ingest/pubsub", "ok")
     log.info(
         "ingested %s from message %s: %d chunks",
         message.document.doc_id,
         message.message_id or "<no id>",
-        stats.chunks_written,
+        counts["chunks_written"],
     )
-    return {
-        "status": "ok",
-        "message_id": message.message_id,
-        **_counts(message.document.doc_id, stats, embedder.model_key),
-    }
+    return {"status": "ok", "message_id": message.message_id, **counts}
