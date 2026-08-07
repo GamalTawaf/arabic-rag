@@ -117,7 +117,7 @@
      So: ink not slate, a standing underline, and sat next to the wordmark with the
      gauge pushed to the far end, because adjacency to the title is what says "links". */
   .nav {
-    display: flex; gap: 18px; flex: none;
+    display: flex; flex-wrap: wrap; gap: 4px 18px; flex: none;
     font-size: 13.5px; font-family: var(--sans);
   }
   .nav a {
@@ -390,13 +390,15 @@
         قانون العمل القطري
         <span class="strapline">Ask in Arabic. Every answer cites its article.</span>
       </h1>
-      <!-- The two places a reader goes to check this thing rather than trust it:
-           the portal the corpus came from, and the service's own live metrics.
-           Before the gauge in source order, so it sits beside the wordmark while the
-           gauge's auto margin pushes the telemetry to the far end of the row. -->
+      <!-- The places a reader goes to check this thing rather than trust it: the
+           portal the corpus came from, the service's own live metrics, and the API
+           it answers on. Before the gauge in source order, so it sits beside the
+           wordmark while the gauge's auto margin pushes the telemetry to the far
+           end of the row. -->
       <nav class="nav" aria-label="روابط">
         <a href="https://www.almeezan.qa" target="_blank" rel="noreferrer noopener">الميزان ↗</a>
         <a href="/dashboard.html">القياسات</a>
+        <a href="/docs">الواجهة البرمجية</a>
         <a href="https://github.com/GamalTawaf/arabic-rag" target="_blank" rel="noreferrer noopener">الكود ↗</a>
       </nav>
       <div class="gauge" id="gauge"></div>

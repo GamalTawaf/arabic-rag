@@ -325,6 +325,21 @@ async def test_static_pages_must_be_revalidated_before_reuse(client):
     assert unchanged.status_code == 304
 
 
+async def test_interactive_api_docs_are_reachable_from_the_pages(client):
+    # Arrange: both pages link to /docs. The mount at "/" is registered last, so
+    # it cannot shadow the doc routes — but a docs_url=None would 404 the links
+    # silently, and a dead link in the masthead is what nobody reports.
+    for page in ("/index.html", "/dashboard.html"):
+        assert 'href="/docs"' in (await client.get(page)).text
+
+    # Act / Assert: FastAPI's defaults, asserted rather than assumed.
+    assert (await client.get("/docs")).status_code == 200
+    schema = await client.get("/openapi.json")
+    assert schema.status_code == 200
+    # The docs are only worth linking if they describe the route the page calls.
+    assert "/ask" in schema.json()["paths"]
+
+
 def test_metrics_app_is_idempotent():
     # Act
     first, second = tracing.metrics_app(), tracing.metrics_app()
