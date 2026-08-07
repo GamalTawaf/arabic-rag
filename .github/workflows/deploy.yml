@@ -102,16 +102,35 @@ jobs:
           echo "IMAGE=$GCP_REGION-docker.pkg.dev/$GCP_PROJECT_ID/$SERVICE_NAME/$SERVICE_NAME" \
             >> "$GITHUB_ENV"
 
+      # buildx, for the registry cache below: the default docker driver cannot
+      # export one. Nothing else about the build changes.
+      - uses: docker/setup-buildx-action@v3
+
       # Two tags for one build: the sha is what gets deployed and is what a
       # rollback names, and `latest` is what terraform/run.tf references, so a
       # later `terraform apply` does not drag the service back to an older image.
+      #
+      # The cache is what makes a code-only deploy cheap. A runner starts with an
+      # empty Docker cache, so every layer was rebuilt from scratch — and a rebuilt
+      # layer gets a new digest even when its content is unchanged, so the push then
+      # re-uploaded torch and the baked embedder every time. Measured on the last
+      # deploy: 370s for this step, of which ~220s was push. With the cache, both the
+      # pip install and the model download become hits and the push skips blobs the
+      # registry already has.
+      #
+      # mode=max caches the builder stage too, which is where the 73s torch install
+      # lives; mode=min would only keep the final stage's layers. It costs a few GB
+      # of Artifact Registry storage under the `buildcache` tag, which is the trade.
+      # Correctness is not on the line: the cache is keyed on layer inputs, so
+      # touching config/requirements/ busts it and torch is reinstalled.
       - name: Build and push
         run: |
-          docker build -f config/Dockerfile \
+          docker buildx build -f config/Dockerfile \
+            --cache-from "type=registry,ref=$IMAGE:buildcache" \
+            --cache-to "type=registry,ref=$IMAGE:buildcache,mode=max" \
             -t "$IMAGE:${{ github.sha }}" \
-            -t "$IMAGE:latest" .
-          docker push "$IMAGE:${{ github.sha }}"
-          docker push "$IMAGE:latest"
+            -t "$IMAGE:latest" \
+            --push .
 
       - name: Deploy the revision
         run: |
